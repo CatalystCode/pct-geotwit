@@ -1,0 +1,16 @@
+{
+  "name": "twitter_tools",
+  "version": "1.0.0",
+  "description": "Toolkit for working with Twitter and Azure",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "tobybrad",
+  "license": "ISC",
+  "dependencies": {
+    "azure": "^0.10.6",
+    "nconf": "^0.8.4",
+    "twitter": "^1.3.0"
+  }
+}
