@@ -1,13 +1,16 @@
 {
-  "name": "twitter_tools",
+  "name": "twitter_ingest",
   "version": "1.0.0",
-  "description": "Toolkit for working with Twitter and Azure",
+  "description": "Twitter ingest tool for Fortis",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "tobybrad",
   "license": "ISC",
+  "files" : [
+    "index.js"
+  ],
   "dependencies": {
     "azure": "^0.10.6",
     "nconf": "^0.8.4",
