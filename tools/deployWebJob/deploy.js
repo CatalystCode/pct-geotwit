@@ -62,10 +62,9 @@ function main(argv) {
   )
   var files = packageJson.files
 
-  var packageFile = "package.zip"
+  var packageFile = path.join(os.tmpdir(), 'package.zip')
   console.log("Creating package file: " + packageFile)
 
-  // var output = fs.createWriteStream(path.join(os.tmpdir(), 'package.zip'))
   var output = fs.createWriteStream(packageFile)
   var archive = archiver('zip')
   archive.pipe(output)
