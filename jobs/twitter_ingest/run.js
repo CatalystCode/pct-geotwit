@@ -151,6 +151,8 @@ function main() {
         filterSpec.track = keywords.join(",");
       }
 
+      console.log(filterSpec);
+
       filter(
         filterSpec,
         function(err, tweet) {
