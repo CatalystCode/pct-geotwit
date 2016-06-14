@@ -2,7 +2,7 @@ var nconf = require("nconf")
 var azure = require("azure")
 var twitter = require("twitter")
 
-var config = nconf.env().file({ file: './localConfig.json' });
+var config = nconf.env().file({ file: '../../localConfig.json' });
 
 function filter(filters, cb) {
 
@@ -86,24 +86,83 @@ function init(cb) {
   });
 }
 
+function getKeywordList() {
+
+  var refDataContainer = config.get("REFERENCE_DATA_CONTAINER_NAME");
+  if (!refDataContainer) {
+    return null;
+  }
+
+  var blobService = azure.createBlobService(
+    config.get("AZURE_STORAGE_ACCOUNT"),
+    config.get("AZURE_STORAGE_ACCESS_KEY")
+  );
+
+  var promise = new Promise((resolve, reject) => {
+    blobService.listBlobsSegmentedWithPrefix(refDataContainer, "keywords", null, (err, result) => {
+      if (err) {
+        console.warn("blob: " + err);
+        reject(err);
+      }
+      resolve(result.entries);
+    });
+  }).then((files) => {
+
+    var all = [];
+    for (var file of files) {
+      all.push(new Promise((resolve, reject) => {
+        blobService.getBlobToText(refDataContainer, file.name, (err, result) => {
+          if (err) {
+          }
+          resolve("" + result);
+        });
+      }));
+    }
+    return Promise.all(all);
+  }).then((results) => {
+    return results.map((x) => { return x.trim(); }).join(",").split(",");
+  });
+
+  return promise;
+}
+
 function main() {
   init((err, tableService) => {
+
     if (err) {
       console.log(err);
       process.exit(1);
     }
-    bbox_indonesia = "94.7717056274,-11.2085676193,141.0194549561,6.2744498253"
-    filter({
-      track: "aku,tidak,yang,kau,ini,itu,di,dan,akan,apa",
-      locations: bbox_indonesia
-    },
-    function(err, tweet) {
-      if (err) {
-        console.warn(err);
-        process.exit(1);
+
+    var filterSpec = {};
+
+    var bbox = config.get("twitter_ingest_bbox");
+    if (bbox) {
+      filterSpec.locations = bbox;
+    }
+
+    getKeywordList().then((keywords) => {
+      if (keywords.length > 400) {
+        console.warn("filter: >400 keywords, truncating");
+        keywords = keywords.slice(0, 399);
       }
-      process_tweet(tweet, tableService);
+
+      if (keywords) {
+        filterSpec.track = keywords.join(",");
+      }
+
+      filter(
+        filterSpec,
+        function(err, tweet) {
+          if (err) {
+            console.warn("twitter: " + err);
+            process.exit(1);
+          }
+          process_tweet(tweet, tableService);
+        }
+      );
     });
+
   });
 }
 
