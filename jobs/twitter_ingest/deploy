@@ -1,3 +1,4 @@
 #!/bin/sh
+TOOLS_DIR=../../pct-webjobtemplate/tools
 #node ../../tools/uploadConfig/upload.js ./localConfig.json pct-geotwit
-node ../../tools/deployWebJob/deploy.js . --job-type=continuous --job-name=twitter_ingest --site-name=pct-geotwit
+node $TOOLS_DIR/deployWebJob/run.js . --job-type=continuous --job-name=twitter_ingest --site-name=pct-geotwit

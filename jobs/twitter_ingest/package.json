@@ -9,7 +9,7 @@
   "author": "tobybrad",
   "license": "ISC",
   "files" : [
-    "index.js"
+    "run.js"
   ],
   "dependencies": {
     "azure": "^0.10.6",
