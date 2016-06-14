@@ -1,3 +1,3 @@
-#!/bin/env
+#!/bin/sh
 #node ../../tools/uploadConfig/upload.js ./localConfig.json pct-geotwit
 node ../../tools/deployWebJob/deploy.js . --job-type=continuous --job-name=twitter_ingest --site-name=pct-geotwit
