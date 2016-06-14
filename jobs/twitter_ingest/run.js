@@ -67,7 +67,7 @@ function process_tweet(tweet, tableService) {
   add(row, "place", JSON.stringify(tweet.place));
   add(row, "geo", JSON.stringify(tweet.geo));
 
-  tableService.insertOrReplaceEntity("filteredtweets", row, (err, result) => {
+  tableService.insertOrReplaceEntity("tweets", row, (err, result) => {
     if (err) {
       console.log("inserting tweet: " + err);
     }
@@ -81,7 +81,7 @@ function init(cb) {
     config.get("AZURE_STORAGE_ACCESS_KEY")
   );
 
-  tableService.createTableIfNotExists("filteredtweets", function(err, result) {
+  tableService.createTableIfNotExists("tweets", function(err, result) {
     cb(err, tableService);
   });
 }
