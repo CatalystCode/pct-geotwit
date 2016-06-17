@@ -7,6 +7,8 @@ var config = nconf.env().file({ file: '../../localConfig.json' });
 
 function main() {
 
+  // Add a timestamp that the Azure DataFactory can actually read
+
   var tableService = azure.createTableService(
     config.get("AZURE_STORAGE_ACCOUNT"),
     config.get("AZURE_STORAGE_ACCESS_KEY")
@@ -32,7 +34,6 @@ function main() {
           console.log("batch: " + err);
         }
         complete += batch.size();
-        console.log("Complete: " + complete);
       });
     }
   }
@@ -48,6 +49,9 @@ function main() {
         process.nextTick(() => {
           nextBatch(result.continuationToken);
         });
+      }
+      else {
+        console.log("Complete: " + complete);
       }
     });
   }
