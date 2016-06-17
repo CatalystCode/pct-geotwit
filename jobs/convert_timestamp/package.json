@@ -1,0 +1,15 @@
+{
+  "name": "convert_timestamp",
+  "version": "1.0.0",
+  "description": "Add .NET friendly timestamp to a Table that has a Unix style one",
+  "main": "run.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "azure": "^0.10.6",
+    "nconf": "^0.8.4"
+  }
+}

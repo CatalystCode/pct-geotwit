@@ -66,6 +66,7 @@ function process_tweet(tweet, tableService) {
   add(row, "in_reply_to", tweet.in_reply_to_user_id);
   add(row, "place", JSON.stringify(tweet.place));
   add(row, "geo", JSON.stringify(tweet.geo));
+  add(row, "isotimestamp", new Date(tweet.timestamp_ms);
 
   tableService.insertOrReplaceEntity("tweets", row, (err, result) => {
     if (err) {
