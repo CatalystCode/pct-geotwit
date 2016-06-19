@@ -20,21 +20,28 @@ function main() {
     var batches = [];
     batches.unshift(new azure_storage.TableBatch());
 
+    var prevPartitionKey = null;
     for (var entry of entries) {
-      if (batches[0].size() == 100) {
+      if (batches[0].size() == 100 ||
+         ((prevPartitionKey != null) && (prevPartitionKey != entry.PartitionKey._))) {
         batches.unshift(new azure_storage.TableBatch());
       }
-      entry.isotimestamp = { '_' : new Date(parseInt(entry.timestamp._)) };
-      batches[0].mergeEntity(entry);
+      if (!('isotimestamp' in entry)) {
+        entry.isotimestamp = { '_' : new Date(parseInt(entry.timestamp._)) };
+        batches[0].mergeEntity(entry);
+        prevPartitionKey = entry.PartitionKey._
+      }
     }
 
     for (var batch of batches) {
-      tableService.executeBatch(TABLE, batch, (err, result) => {
-        if (err) {
-          console.log("batch: " + err);
-        }
-        complete += batch.size();
-      });
+      if (batch.size() > 0) {
+        tableService.executeBatch(TABLE, batch, (err, result) => {
+          if (err) {
+            console.log("batch: " + err);
+          }
+          complete += batch.size();
+        });
+      }
     }
   }
 
