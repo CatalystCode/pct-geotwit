@@ -30,7 +30,6 @@ function main() {
       }
     }
 
-    console.log(row);
     tableService.insertOrReplaceEntity("users", row, (err, result) => {
       if (err) {
         console.warn("insert: " + err);
