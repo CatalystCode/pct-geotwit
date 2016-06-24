@@ -1,6 +1,6 @@
 var azure = require("azure");
 var nconf = require("nconf");
-var azure_storage = require("azure-storage");
+var EventHubClient = require("azure-event-hubs").Client;
 
 var TABLE = "tweets";
 var config = nconf.env().file({ file: '../../localConfig.json' });
@@ -14,35 +14,17 @@ function main() {
     config.get("AZURE_STORAGE_ACCESS_KEY")
   );
 
+  var eventHubSender = null;
+  var eventHubClient = EventHubClient.fromConnectionString(
+    config.get("twitter_to_location_write_config")
+  );
+
   var complete = 0;
   function processBatch(entries) {
-
-    var batches = [];
-    batches.unshift(new azure_storage.TableBatch());
-
-    var prevPartitionKey = null;
     for (var entry of entries) {
-      if (batches[0].size() == 100 ||
-         ((prevPartitionKey != null) && (prevPartitionKey != entry.PartitionKey._))) {
-        batches.unshift(new azure_storage.TableBatch());
-      }
-      if (!('isotimestamp' in entry)) {
-        entry.isotimestamp = { '_' : new Date(parseInt(entry.timestamp._)) };
-        batches[0].mergeEntity(entry);
-        prevPartitionKey = entry.PartitionKey._
-      }
+      eventHubSender.send(entry);
     }
-
-    for (var batch of batches) {
-      if (batch.size() > 0) {
-        tableService.executeBatch(TABLE, batch, (err, result) => {
-          if (err) {
-            console.log("batch: " + err);
-          }
-          complete += batch.size();
-        });
-      }
-    }
+    console.log(".");
   }
 
   function nextBatch(continuationToken) {
@@ -63,7 +45,15 @@ function main() {
     });
   }
 
-  nextBatch(null);
+  eventHubClient.createSender()
+  .then((tx) => {
+    eventHubSender = tx;
+    eventHubSender.on("errorReceived", (err) => {
+      console.warn("eventhubsender: " + err);
+    });
+    nextBatch(null);
+  });
+
 }
 
 if (require.main === module) {

@@ -1,9 +1,14 @@
 var azure = require("azure");
 var nconf = require("nconf");
+var Promise = require("Bluebird");
 
 var TABLE = "tweets";
 var config = nconf.env().file({ file: '../../localConfig.json' });
 var EventProcessorHost = require("./lib/EventProcessorHost.js");
+
+function onMessage(msg) {
+  console.log(msg);
+}
 
 function main() {
 
@@ -20,14 +25,23 @@ function main() {
   );
 
   var eph = new EventProcessorHost(blobService, config.get("twitter_to_location_read_config"));
+
   eph.init()
   .then(() => {
-    console.log("done");
+    return eph.registerEventProcessor("$Default", null);
   })
   .catch((e) => {
+    console.warn("main: ");
     console.warn(e.stack);
     process.exit(1);
   });
+
+  //.then((receiver) => {
+  //  receiver.on("message", onMessage);
+  //  receiver.on("errorReceived", (err) => {
+  //    console.warn(err);
+  //  });
+  //})
 
 /*
   function processMessages(partitions) {

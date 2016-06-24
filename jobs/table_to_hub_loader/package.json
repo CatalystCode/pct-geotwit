@@ -10,7 +10,10 @@
   "license": "ISC",
   "dependencies": {
     "azure": "^0.10.6",
+    "azure-event-hubs": "0.0.2",
     "nconf": "^0.8.4"
   },
-  "files" : [ "./run.js" ]
+  "files": [
+    "./run.js"
+  ]
 }
