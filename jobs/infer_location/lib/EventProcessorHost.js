@@ -3,18 +3,39 @@ var guid = require("guid");
 var azure = require("azure");
 var EventHubClient = require("azure-event-hubs").Client;
 
+function shuffle(array) {
+  // Randomise an array..
+  var currentIndex = array.length, temporaryValue, randomIndex;
+  // While there remain elements to shuffle...
+  while (0 !== currentIndex) {
+    // Pick a remaining element...
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex -= 1;
+    // And swap it with the current element.
+    temporaryValue = array[currentIndex];
+    array[currentIndex] = array[randomIndex];
+    array[randomIndex] = temporaryValue;
+  }
+  return array;
+}
+
 function EventProcessorHost(blobService, eventHubConnectionString)
 {
   this.blobService = blobService;
 
+  // Our unique id
   this.id = guid.raw();
 
+  // Container into which we'll write our state
   this.container = "eph";
+
+  // The amount of time we'll lock a parition
   this.leaseDuration = 30;
-  this.leaseDelay = 10;
+
   this.checkpointInterval = 10;
-  //this.leaseDuration = 6000;
-  //this.leaseDelay = 10000;
+  this.countInterval = 10;
+  this.minActivePeriod = 30;
+
   this.hubConnectionString = eventHubConnectionString;
 
   var stringParts = eventHubConnectionString.split("=");
@@ -23,6 +44,8 @@ function EventProcessorHost(blobService, eventHubConnectionString)
 
   this.partitions = [];
   this.currentPartitions = {};
+
+  this.activeWorkers = [];
 
   this.evp = null;
   this.consumerGroup = null;
@@ -39,41 +62,110 @@ EventProcessorHost.prototype.init = function() {
 }
 
 EventProcessorHost.prototype.registerEventProcessor = function(consumerGroup, evp) {
+
+  // Register a callback that will recieve messages from the hub. Messages may be delivered
+  // from any partition at any time. Also.. start everything
+
   this.evp = evp;
   this.consumerGroup = consumerGroup;
 
-  this.timer = setInterval(() => {
-    this._tick();
-  }, 1000);
+  // Perform initial worker checkpoint then
+  // set up execution timers..
+  this.checkpointWorker((err, result) => {
 
-  this.workerCheckpointTimer = setInterval(() => {
-    this.checkpointWorker();
+    console.log("Initial worker checkpoint");
+    this.workerCheckpointTimer = setInterval(() => {
+      this.checkpointWorker();
+    },  this.checkpointInterval * 1000);
+
+    this._countWorkers();
+    this.countTimer = setInterval(() => {
+      this._countWorkers();
+    }, this.countInterval * 1000);
+
+    this.timer = setInterval(() => {
+      this._tick();
+    }, 1000);
   });
 }
 
-EventProcessorHost.prototype.checkpointWorker = function() {
-  var blob = path.join(this.hubName, this.id);
+EventProcessorHost.prototype._calcPartitionShare = function() {
+
+  // Figure out how many partitions this worker should have
+  // if (workers % partitions != 0) the remainder will be distributed
+  // amongst the lowest sorting workers
+
+  console.log("a/p" + this.activeWorkers + ":" + this.partitions);
+  var ourShare = (this.partitions.length / this.activeWorkers.length);
+  var remainder = (this.partitions.length % this.activeWorkers.length);
+  console.log("our/remainder" + ourShare + ":" + remainder);
+
+  this.activeWorkers.sort();
+
+  // These workers get one more partition than the rest
+  var extraWork = this.activeWorkers.slice(0, remainder);
+
+  // And if we're in that set, we get an extra partition
+  if (this.id in extraWork) {
+    return ourShare + 1;
+  }
+
+  // .. else we don't
+  return ourShare;
+}
+
+EventProcessorHost.prototype.checkpointWorker = function(cb) {
+  // Write a file named with our GUID. Other workers can use the last-modified time
+  // to count the number of active workers
+  console.log("checkpoint worker");
+  var blob = path.join(this.hubName, "worker." + this.id);
   this.blobService.createBlockBlobFromText(this.container, blob, this.id, (err, result) => {
+    if (cb) cb(err, result);
   });
 }
 
-EventProcessorHost.prototype.checkpointPartition = function(partition) {
+EventProcessorHost.prototype.checkpointPartition = function(partition, cb) {
+  // Checkpoint the furthest event we've processed into the partition lock file
   var blob = path.join(this.hubName, partition);
   var content = JSON.stringify({checkpoint:"soemthing"});
+  console.log("checkpoint partition: " + partition);
   this.blobService.createBlockBlobFromText(this.container, blob, content, (err, result) => {
+    if (cb) cb(err, result);
   });
 }
 
 EventProcessorHost.prototype._tick = function() {
 
-  if (Object.keys(this.currentPartitions).length < this.partitions.length) {
+  // Main loop:
+  // If we own less partitions than we think we should: attempt to acquire a new partition
+
+  var self = this;
+  var numPartitions = this._calcPartitionShare();
+  console.log("tick: num: " + numPartitions);
+
+  if (Object.keys(this.currentPartitions).length < numPartitions) {
+
+    // We have less partitions than we should, attempt to acquire another
     this._acquirePartition()
     .then((partition) => {
-      console.log(this.id + ":acquired " + partition);
       if (partition) {
-        setInterval(() => {
+
+        // We succesfully acquired a new partition
+        console.log(this.id + ":acquired " + partition);
+
+        // Renew every half lease duration.
+        // Note: This is a single shot that we re-set every time
+        // we renew a lease
+        setTimeout(() => {
+          self._renewLease(partition);
+        }, (self.leaseDuration / 2) * 1000);
+
+        // Set up a checkpoint timer, we'll cancel this when
+        // we fail to renew a lease
+        self.currentPartitions[partition].leaseTimer = setInterval(() => {
           this.checkpointPartition(partition);
         }, this.checkpointInterval * 1000);
+
 
         /*this.eventHubClient.createReceiver(this.consumerGroup, partition)
         .then((rx) => {
@@ -84,7 +176,13 @@ EventProcessorHost.prototype._tick = function() {
             console.log(msg);
           });
         });*/
+      } else {
+        // We didn't acquire a partition, see if we should break some leases
+        self._breakPartitions();
       }
+    })
+    .catch((e) => {
+      console.warn(e.stack);
     });
   }
 }
@@ -101,11 +199,7 @@ EventProcessorHost.prototype._acquirePartition = function() {
         cb(err, null);
       }
       else {
-        self.currentPartitions[partition] = result.id;
-
-        setTimeout(() => {
-          self._renewLease(partition);
-        }, (self.leaseDuration / 2) * 1000);
+        self.currentPartitions[partition] = { leaseId : result.id };
         cb(null, partition);
       }
     });
@@ -137,19 +231,56 @@ EventProcessorHost.prototype._acquirePartition = function() {
   });
 }
 
+EventProcessorHost.prototype._breakPartitions = function() {
+
+  // Break leases on the number of extra partitions we think we should have
+
+  function breakLease(partition) {
+    console.log("breakLease:" + partition);
+    var blob = path.join(this.hubName, partition);
+    this.blobService.breakLease(this.container, blob, (err, result) => {
+    });
+  }
+
+
+  var numPartitions = this._calcPartitionShare();
+  var toBreak = numPartitions - Object.keys(this.currentPartitions).length;
+  if (toBreak > 0) {
+
+    // breakPartition == partitions we don't currently lease
+    var breakPartitions = Object.keys(this.partitions).filter(
+      (x) => { return !(x in this.currentPartitions); }
+    );
+
+    // Pick random toBreak partitions to break
+    breakPartitions = shuffle(breakPartitions).slice(0, toBreak);
+
+    // Now break those leases..
+    for (var partition in breakPartitions) {
+      breakLease(partition);
+    }
+  }
+}
+
 EventProcessorHost.prototype._renewLease = function(partition) {
+
+  console.log(this.currentPartitions);
   var blob = path.join(this.hubName, partition);
-  var leaseId = this.currentPartitions[partition];
+  var leaseId = this.currentPartitions[partition].leaseId;
+
   this.blobService.renewLease(this.container, blob, leaseId, (err, result) => {
     if (err) {
-      console.log("renew error: " + err);
-      setTimeout(() => {
-        delete this.currentPartitions[partition];
-      }, this.leaseDelay * 1000);
+      console.log(err);
+      // Lease has been broken, cancel the checkpoint timer, write current checkpoint,
+      // release partition
+      clearInterval(this.currentPartitions[partition].leaseTimer);
+      this._checkpointPartition(partition, (err, result) => {
+        this._releasePartition(partition);
+      });
     }
     else {
-      console.log("renew result: " + result);
-
+      // Succesfully renewed the lease, business as usual, set a new
+      // renew timer
       setTimeout(() => {
         this._renewLease(partition);
       }, (this.leaseDuration / 2) * 1000);
@@ -157,27 +288,52 @@ EventProcessorHost.prototype._renewLease = function(partition) {
   });
 }
 
-
-EventProcessorHost.prototype._breakLease = function(partition) {
-  var blob = path.join(this.hubName, partition);
-}
-
 EventProcessorHost.prototype._releasePartition = function(partition) {
 
-  return new Promise((resolve, reject) => {
-    var blob = path.join(self.hubName, partition);
-    var leaseId = this.currentPartitions[partition];
-    this.blobService.releaseLease(this.container, blob, lease, (err, result) => {
-      if (err) reject(err);
-      else {
-        resolve(result);
-        setTimeout(() => {
-          delete currentPartitions[partition];
-        }, this.leaseDelay);
-      }
-    });
+  var blob = path.join(self.hubName, partition);
+  var leaseId = this.currentPartitions[partition].leaseId;
+  this.blobService.releaseLease(this.container, blob, lease, (err, result) => {
+    // Remove from current set after a delay to ensure we don't immediately
+    // reacquire the partition
+    setTimeout(() => {
+      delete this.currentPartitions[partition];
+    }, this.leaseDuration);
   });
 }
+
+EventProcessorHost.prototype._countWorkers = function() {
+
+  var CULL_AFTER = 5 * 60; // Cull worker lock files that haven't been modified in 5 minutes
+
+  var now = Date.now();
+  var activeWorkers = [];
+  var prefix = this.hubName + "/worker.";
+
+  // Count the number of recently modified worker lock files..
+
+  this.blobService.listBlobsSegmentedWithPrefix(this.container, prefix, null, (err, result) => {
+    for (var entry of result.entries) {
+
+      var lastModified = Date.parse(entry.properties["last-modified"]);
+      var age = Date.now() - lastModified;
+
+      // Tidy up old files..
+      if (age > CULL_AFTER * 1000) {
+        this.blobService.deleteBlob(this.container, entry.name, (err, result) => {
+        });
+      }
+
+      // Worker appears active
+      if (age < this.minActivePeriod * 1000) {
+        activeWorkers.push(entry.name);
+      }
+    }
+
+    this.activeWorkers = activeWorkers;
+    console.log("count workers:" + this.activeWorkers.length);
+  });
+}
+
 
 EventProcessorHost.prototype._initPartitionBlobs = function() {
 
