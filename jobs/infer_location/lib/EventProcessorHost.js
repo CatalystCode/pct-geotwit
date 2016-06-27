@@ -32,18 +32,22 @@ function EventProcessorHost(blobService, eventHubConnectionString)
   // The amount of time we'll lock a parition
   this.leaseDuration = 30;
 
-  this.checkpointInterval = 10;
   this.countInterval = 10;
-  this.minActivePeriod = 30;
+  this.checkpointInterval = 10;
+  this.workerActiveTimeout = this.checkpointInterval * 3;
 
   this.hubConnectionString = eventHubConnectionString;
 
   var stringParts = eventHubConnectionString.split("=");
   this.hubName = stringParts[stringParts.length - 1];
+
+  console.log("Initialising..");
   console.log(this.hubName);
+  console.log(this.id);
 
   this.partitions = [];
   this.currentPartitions = {};
+  this.lastBreakTime = null;
 
   this.activeWorkers = [];
 
@@ -95,10 +99,8 @@ EventProcessorHost.prototype._calcPartitionShare = function() {
   // if (workers % partitions != 0) the remainder will be distributed
   // amongst the lowest sorting workers
 
-  console.log("a/p" + this.activeWorkers + ":" + this.partitions);
   var ourShare = (this.partitions.length / this.activeWorkers.length);
   var remainder = (this.partitions.length % this.activeWorkers.length);
-  console.log("our/remainder" + ourShare + ":" + remainder);
 
   this.activeWorkers.sort();
 
@@ -141,7 +143,6 @@ EventProcessorHost.prototype._tick = function() {
 
   var self = this;
   var numPartitions = this._calcPartitionShare();
-  console.log("tick: num: " + numPartitions);
 
   if (Object.keys(this.currentPartitions).length < numPartitions) {
 
@@ -235,13 +236,17 @@ EventProcessorHost.prototype._breakPartitions = function() {
 
   // Break leases on the number of extra partitions we think we should have
 
-  function breakLease(partition) {
-    console.log("breakLease:" + partition);
-    var blob = path.join(this.hubName, partition);
-    this.blobService.breakLease(this.container, blob, (err, result) => {
-    });
+  if (this.lastBreakTime != null && Date.now() - this.lastBreakTime < this.leaseDuration * 1000) {
+    return;
   }
 
+  var self = this;
+  function breakLease(partition) {
+    console.log("breakLease:" + partition);
+    var blob = path.join(self.hubName, partition);
+    self.blobService.breakLease(self.container, blob, (err, result) => {
+    });
+  }
 
   var numPartitions = this._calcPartitionShare();
   var toBreak = numPartitions - Object.keys(this.currentPartitions).length;
@@ -256,6 +261,7 @@ EventProcessorHost.prototype._breakPartitions = function() {
     breakPartitions = shuffle(breakPartitions).slice(0, toBreak);
 
     // Now break those leases..
+    this.lastBreakTime = Date.now();
     for (var partition in breakPartitions) {
       breakLease(partition);
     }
@@ -264,17 +270,15 @@ EventProcessorHost.prototype._breakPartitions = function() {
 
 EventProcessorHost.prototype._renewLease = function(partition) {
 
-  console.log(this.currentPartitions);
   var blob = path.join(this.hubName, partition);
   var leaseId = this.currentPartitions[partition].leaseId;
 
   this.blobService.renewLease(this.container, blob, leaseId, (err, result) => {
     if (err) {
-      console.log(err);
       // Lease has been broken, cancel the checkpoint timer, write current checkpoint,
       // release partition
       clearInterval(this.currentPartitions[partition].leaseTimer);
-      this._checkpointPartition(partition, (err, result) => {
+      this.checkpointPartition(partition, (err, result) => {
         this._releasePartition(partition);
       });
     }
@@ -290,9 +294,9 @@ EventProcessorHost.prototype._renewLease = function(partition) {
 
 EventProcessorHost.prototype._releasePartition = function(partition) {
 
-  var blob = path.join(self.hubName, partition);
+  var blob = path.join(this.hubName, partition);
   var leaseId = this.currentPartitions[partition].leaseId;
-  this.blobService.releaseLease(this.container, blob, lease, (err, result) => {
+  this.blobService.releaseLease(this.container, blob, leaseId, (err, result) => {
     // Remove from current set after a delay to ensure we don't immediately
     // reacquire the partition
     setTimeout(() => {
@@ -322,10 +326,13 @@ EventProcessorHost.prototype._countWorkers = function() {
         this.blobService.deleteBlob(this.container, entry.name, (err, result) => {
         });
       }
+      else {
 
-      // Worker appears active
-      if (age < this.minActivePeriod * 1000) {
-        activeWorkers.push(entry.name);
+        // Worker appears active
+        if (age < this.workerActiveTimeout * 1000) {
+          activeWorkers.push(entry.name);
+        }
+
       }
     }
 
@@ -407,8 +414,6 @@ EventProcessorHost.prototype._initPartitionBlobs = function() {
   .then(() => {
     return new Promise((resolve, reject) => {
       this.blobService.releaseLease(this.container, null, containerLeaseId, (err, result) => {
-        console.log(this.id + ":" + " container released");
-        console.log(result);
         if (err) reject(err);
         else resolve(result);
       });
