@@ -7,8 +7,6 @@ var config = nconf.env().file({ file: '../../localConfig.json' });
 
 function main() {
 
-  // Add a timestamp that the Azure DataFactory can actually read
-
   var tableService = azure.createTableService(
     config.get("AZURE_STORAGE_ACCOUNT"),
     config.get("AZURE_STORAGE_ACCESS_KEY")
@@ -24,7 +22,6 @@ function main() {
     for (var entry of entries) {
       eventHubSender.send(entry);
     }
-    console.log(".");
   }
 
   function nextBatch(continuationToken) {

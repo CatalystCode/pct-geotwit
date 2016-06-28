@@ -61,8 +61,6 @@ function onMessage(tableService, msg) {
       user.replied_to = JSON.parse(entry.replied_to._);
     }
 
-    console.log(msg);
-
     var update = false;
     if ("in_reply_to" in msg) {
       update = true;
