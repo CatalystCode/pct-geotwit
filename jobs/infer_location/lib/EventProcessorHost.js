@@ -53,6 +53,7 @@ function EventProcessorHost(blobService, eventHubConnectionString)
 
   this.evp = null;
   this.consumerGroup = null;
+  this.latestOffsets = {};
 
   this.eventHubClient = new EventHubClient.fromConnectionString(eventHubConnectionString);
 }
@@ -126,12 +127,30 @@ EventProcessorHost.prototype.checkpointWorker = function(cb) {
   });
 }
 
-EventProcessorHost.prototype.checkpointPartition = function(partition, cb) {
-  // Checkpoint the furthest event we've processed into the partition lock file
+EventProcessorHost.prototype._getPartitionOffset = function(partition, cb) {
   var blob = path.join(this.hubName, partition);
-  var content = JSON.stringify({checkpoint:"soemthing"});
-  console.log("checkpoint partition: " + partition);
-  this.blobService.createBlockBlobFromText(this.container, blob, content, (err, result) => {
+  this.blobService.getBlobToText(this.container, blob, (err, result) => {
+    var checkpoint = JSON.parse(result);
+    var offset = parseInt(checkpoint.offset);
+    cb(err, offset);
+  });
+}
+
+EventProcessorHost.prototype.checkpointPartition = function(partition, cb) {
+
+  // Checkpoint the furthest event we've processed into the partition lock file
+
+  if (this.latestOffsets == null) {
+    return;
+  }
+
+  var blob = path.join(this.hubName, partition);
+  var content = JSON.stringify({partition:partition, offset:this.latestOffsets[partition]});
+  console.log("checkpoint partition: " + content);
+
+  var opt = { leaseId : this.currentPartitions[partition].leaseId };
+  this.blobService.createBlockBlobFromText(this.container, blob, content, opt, (err, result) => {
+    if (err) { console.warn(err); }
     if (cb) cb(err, result);
   });
 }
@@ -164,19 +183,35 @@ EventProcessorHost.prototype._tick = function() {
         // Set up a checkpoint timer, we'll cancel this when
         // we fail to renew a lease
         self.currentPartitions[partition].leaseTimer = setInterval(() => {
-          this.checkpointPartition(partition);
-        }, this.checkpointInterval * 1000);
+          self.checkpointPartition(partition);
+        }, self.checkpointInterval * 1000);
 
 
-        /*this.eventHubClient.createReceiver(this.consumerGroup, partition)
-        .then((rx) => {
-          rx.on("errorReceived", (err) => {
-            console.warn("error:" + err);
+        if (self.latestOffsets == null) {
+          self.latestOffsets = {};
+        }
+
+        self._getPartitionOffset(partition, (err, result) => {
+
+          self.latestOffsets[partition] = result;
+
+          // Start receiving messages on this partition
+          var options = { startAfterOffset: result };
+          self.currentPartitions[partition].receiver =
+          self.eventHubClient.createReceiver(self.consumerGroup, partition, options)
+          .then((rx) => {
+            rx.on("errorReceived", (err) => {
+              console.warn("error:" + err);
+            });
+            rx.on("message", (msg) => {
+              self.latestOffsets[partition] = msg.systemProperties['x-opt-offset'];
+              if (self.evp != null) {
+                self.evp(msg);
+              }
+            });
           });
-          rx.on("message", (msg) => {
-            console.log(msg);
-          });
-        });*/
+        });
+
       } else {
         // We didn't acquire a partition, see if we should break some leases
         self._breakPartitions();
@@ -275,8 +310,12 @@ EventProcessorHost.prototype._renewLease = function(partition) {
 
   this.blobService.renewLease(this.container, blob, leaseId, (err, result) => {
     if (err) {
-      // Lease has been broken, cancel the checkpoint timer, write current checkpoint,
-      // release partition
+      // Lease has been broken, shutdown received, cancel the checkpoint timer,
+      // write current checkpoint, release partition
+
+      this.currentPartitions[partition].receiver.close();
+      this.currentPartitions[partition].receiver = null;
+
       clearInterval(this.currentPartitions[partition].leaseTimer);
       this.checkpointPartition(partition, (err, result) => {
         this._releasePartition(partition);

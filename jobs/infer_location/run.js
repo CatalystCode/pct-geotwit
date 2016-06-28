@@ -7,7 +7,7 @@ var config = nconf.env().file({ file: '../../localConfig.json' });
 var EventProcessorHost = require("./lib/EventProcessorHost.js");
 
 function onMessage(msg) {
-  console.log(msg);
+  // console.log(msg);
 }
 
 function main() {
@@ -28,7 +28,7 @@ function main() {
 
   eph.init()
   .then(() => {
-    return eph.registerEventProcessor("$Default", null);
+    return eph.registerEventProcessor("$Default", onMessage);
   })
   .catch((e) => {
     console.warn("main: ");
