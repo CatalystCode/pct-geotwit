@@ -24,9 +24,9 @@ function onMessage(tableService, msg) {
       }
     }
 
-    tableService.insertOrReplaceEntity("users", row, (err, result) => {
+    tableService.insertOrReplaceEntity(USER_TABLE, row, (err, result) => {
       if (err) {
-        console.warn("insert: " + err);
+        setTimeout(() => { writeUser(row); }, 100);
       }
     });
   }

@@ -17,6 +17,6 @@
   },
   "files": [
     "./run.js",
-    "./lib/EventProcessorHub.js"
+    "./lib/EventProcessorHost.js"
   ]
 }
