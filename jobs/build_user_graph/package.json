@@ -1,0 +1,18 @@
+{
+  "name": "build_user_graph",
+  "version": "1.0.0",
+  "description": "Build the user graph from a queue of tweets",
+  "main": "run.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "azure": "^0.10.6",
+    "nconf": "^0.8.4"
+  },
+  "files": [
+    "./run.js"
+  ]
+}
