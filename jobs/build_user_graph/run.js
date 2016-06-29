@@ -182,6 +182,7 @@ function pump(tableService, queueService) {
       });
     }
     else {
+      console.warn("queue.getMessages");
       console.warn(err);
     }
   });
