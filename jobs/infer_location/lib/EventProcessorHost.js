@@ -30,11 +30,11 @@ function EventProcessorHost(blobService, eventHubConnectionString)
   this.container = "eph";
 
   // The amount of time we'll lock a parition
-  this.leaseDuration = 30;
+  this.leaseDuration = 60;
 
-  this.countInterval = 10;
   this.checkpointInterval = 10;
   this.workerActiveTimeout = this.checkpointInterval * 3;
+  this.countInterval = this.workerActiveTimeout;
 
   this.hubConnectionString = eventHubConnectionString;
 
@@ -120,7 +120,6 @@ EventProcessorHost.prototype._calcPartitionShare = function() {
 EventProcessorHost.prototype.checkpointWorker = function(cb) {
   // Write a file named with our GUID. Other workers can use the last-modified time
   // to count the number of active workers
-  console.log("checkpoint worker");
   var blob = path.join(this.hubName, "worker." + this.id);
   this.blobService.createBlockBlobFromText(this.container, blob, this.id, (err, result) => {
     if (cb) cb(err, result);
@@ -130,9 +129,15 @@ EventProcessorHost.prototype.checkpointWorker = function(cb) {
 EventProcessorHost.prototype._getPartitionOffset = function(partition, cb) {
   var blob = path.join(this.hubName, partition);
   this.blobService.getBlobToText(this.container, blob, (err, result) => {
-    var checkpoint = JSON.parse(result);
-    var offset = parseInt(checkpoint.offset);
-    cb(err, offset);
+    if (err) {
+      console.warn("getPartitionOffset: " + partition);
+      cb(err, null);
+    }
+    else {
+      var checkpoint = JSON.parse(result);
+      var offset = parseInt(checkpoint.offset);
+      cb(null, offset);
+    }
   });
 }
 
@@ -146,12 +151,15 @@ EventProcessorHost.prototype.checkpointPartition = function(partition, cb) {
 
   var blob = path.join(this.hubName, partition);
   var content = JSON.stringify({partition:partition, offset:this.latestOffsets[partition]});
-  console.log("checkpoint partition: " + content);
 
   var opt = { leaseId : this.currentPartitions[partition].leaseId };
   this.blobService.createBlockBlobFromText(this.container, blob, content, opt, (err, result) => {
-    if (err) { console.warn(err); }
-    if (cb) cb(err, result);
+    if (err) {
+      console.warn("checkpointPartition:" + partition);
+      console.warn(err);
+    }
+    if (cb)
+      cb(err, result);
   });
 }
 
@@ -310,10 +318,14 @@ EventProcessorHost.prototype._renewLease = function(partition) {
 
   this.blobService.renewLease(this.container, blob, leaseId, (err, result) => {
     if (err) {
+
+      console.warn("lost lease: " + partition);
+      console.warn(err);
+
       // Lease has been broken, shutdown received, cancel the checkpoint timer,
       // write current checkpoint, release partition
 
-      this.currentPartitions[partition].receiver.close();
+      console.log(typeof(this.currentPartitions[partition].receiver));
       this.currentPartitions[partition].receiver = null;
 
       clearInterval(this.currentPartitions[partition].leaseTimer);
@@ -324,6 +336,7 @@ EventProcessorHost.prototype._renewLease = function(partition) {
     else {
       // Succesfully renewed the lease, business as usual, set a new
       // renew timer
+      console.warn("lease renewed: " + partition);
       setTimeout(() => {
         this._renewLease(partition);
       }, (this.leaseDuration / 2) * 1000);
@@ -355,6 +368,13 @@ EventProcessorHost.prototype._countWorkers = function() {
   // Count the number of recently modified worker lock files..
 
   this.blobService.listBlobsSegmentedWithPrefix(this.container, prefix, null, (err, result) => {
+
+    if (err) {
+      console.warn("_countWorkers");
+      console.warn(err);
+      return;
+    }
+
     for (var entry of result.entries) {
 
       var lastModified = Date.parse(entry.properties["last-modified"]);
