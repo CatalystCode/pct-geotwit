@@ -1,87 +1,137 @@
 var azure = require("azure");
 var nconf = require("nconf");
+var geolib = require("geolib");
 var Promise = require("Bluebird");
 
-var USER_TABLE = "users";
+var TABLE = "users";
 var config = nconf.env().file({ file: '../../localConfig.json' });
-var EventProcessorHost = require("./lib/EventProcessorHost.js");
 
-function onMessage(tableService, msg) {
-
-  function add(r, k, v) {
-    r[k] = { _ : v };
+function detablify(t) {
+  var o = {};
+  for (var k in t) {
+    if (k[0] != '.') {
+      o[k] = t[k]._;
+    }
   }
+  return o;
+}
 
-  function writeUser(u) {
+var processed = 0;
+var reachable = 0;
+var currentPartition = 0;
 
-    var row = {};
-    for (var k in u) {
-      if (typeof(u[k]) == 'object') {
-        add(row, k, JSON.stringify(u[k]));
+function writeUserPosition(tableService, user, position, confidence, cb) {
+  var mergeUser = {
+    PartitionKey : { "_" : user.PartitionKey },
+    RowKey : { "_" : user.RowKey },
+    location : {"_" : JSON.stringify({
+      lat : position.latitude,
+      lon : position.longitude,
+      confidence : confidence
+    })}
+  };
+
+  tableService.mergeEntity(TABLE, mergeUser, (err, result) => {
+    if (cb)
+      cb(err, result);
+  });
+}
+
+function processUser(tableService, user) {
+
+  var repliedTo = JSON.parse(user.replied_to);
+  var repliedBy = JSON.parse(user.replied_by);
+
+  processed++;
+  currentPartition++;
+  if (repliedTo.length > 0 || repliedBy.length > 0) {
+    reachable++;
+  }
+  return;
+
+  var locations = JSON.parse(user.locations);
+
+  var locs = [];
+  for (var location of locations) {
+    var latlons = [];
+    if ("place" in location) {
+      var place = JSON.parse(location.place);
+      if (place.bounding_box.type == "Polygon") {
+        var coords = place.bounding_box.coordinates[0];
+        for (var latlon of coords) {
+          latlons.push({latitude:latlon[1], longitude:latlon[0]});
+        }
       }
       else {
-        add(row, k, u[k].toString());
+        console.warn("unknown bounding box type");
       }
     }
+    else if ("geo" in location) {
+      var geo = JSON.parse(location.geo);
+      if (geo["type"] == "Point") {
+        latlons.push({latitude:geo.coordinates[0], longitude:geo.coordinates[1]});
+      }
+      else {
+        console.warn("unknown geo type");
+        console.warn(geo);
+      }
+    }
+    if (latlons.length > 0) {
+      // Locs is all the locations this user has ever reported
+      locs.push(geolib.getCenter(latlons));
+    }
+  }
 
-    tableService.insertOrReplaceEntity(USER_TABLE, row, (err, result) => {
+  // We position the user at the centre point of all
+  // the locations they've ever reported
+  if (locs.length > 0) {
+    var position = geolib.getCenter(latlons);
+    writeUserPosition(tableService, user, position, 1, (err, result) => {
       if (err) {
-        setTimeout(() => { writeUser(row); }, 100);
+        console.warn(err);
+      }
+    });
+  }
+}
+
+function processBatch(tableService, entries) {
+  for (var entry of entries) {
+    var user = detablify(entry);
+    processUser(tableService, user);
+  }
+}
+
+function processPartition(tableService, partition, cb) {
+
+  currentPartition = 0;
+  console.log("Processing " + partition);
+
+  var query = new azure.TableQuery().where("PartitionKey == ?", partition);
+
+  function nextBatch(continuationToken) {
+    tableService.queryEntities(TABLE, query, continuationToken, (err, result) => {
+      if (err) {
+        console.warn(err);
+        process.exit(1);
+      }
+      processBatch(tableService, result.entries);
+      if (result.continuationToken) {
+        process.nextTick(() => {
+          nextBatch(result.continuationToken);
+        });
+      }
+      else {
+        console.log("Processed: " + processed);
+        console.log("Reachable: " + reachable);
+        console.log("This Partition: " + currentPartition);
+        cb();
       }
     });
   }
 
-  var userId = msg.user_id._.toString();
-  var partKey = userId.slice(0, 2);
-
-  var tableQuery = new azure.TableQuery().where("PartitionKey == ?", partKey)
-  .and("RowKey == ?", userId);
-
-  tableService.queryEntities(USER_TABLE, tableQuery, null, (err, result) => {
-
-    if (err) {
-      console.warn(err);
-      return;
-    }
-
-    var user = {
-      PartitionKey : partKey,
-      RowKey : userId
-    };
-
-    if (result.entries.length == 0) {
-      // New user
-      user.locations = [];
-      user.replied_to = [];
-    }
-    else {
-      // Existing user
-      var entry = result.entries[0];
-      user.locations = JSON.parse(entry.locations._);
-      user.replied_to = JSON.parse(entry.replied_to._);
-    }
-
-    var update = false;
-    if ("in_reply_to" in msg) {
-      update = true;
-      user.replied_to.push(parseInt(msg.in_reply_to._));
-    }
-
-    if ("geo" in msg && msg.geo._ != 'null') {
-      update = true;
-      user.locations.push({"geo":msg.geo._});
-    }
-
-    if ("place" in msg && msg.place._ != 'null') {
-      update = true;
-      user.locations.push({"place":msg.place._});
-    }
-
-    if (update) {
-      writeUser(user);
-    }
-  });
+  nextBatch(null);
 }
+
 
 function main() {
 
@@ -92,28 +142,24 @@ function main() {
     config.get("AZURE_STORAGE_ACCESS_KEY")
   );
 
-  var blobService = azure.createBlobService(
+  var queueService = azure.createQueueService(
     config.get("AZURE_STORAGE_ACCOUNT"),
     config.get("AZURE_STORAGE_ACCESS_KEY")
   );
 
-  tableService.createTableIfNotExists(USER_TABLE, (err, result) => {
+  var partitions = [];
+  for (var partition = 10; partition < 100; partition++) {
+    partitions.push(partition.toString());
+  }
 
-    var eph = new EventProcessorHost(blobService, config.get("twitter_to_location_read_config"));
-
-    eph.init()
-    .then(() => {
-      return eph.registerEventProcessor("$Default", (msg) => {
-        onMessage(tableService, msg.body);
-      });
-    })
-    .catch((e) => {
-      console.warn("main: ");
-      console.warn(e.stack);
-      process.exit(1);
+  function nextPartition() {
+    processPartition(tableService, partitions[0], () => {
+      partitions.shift();
+      nextPartition();
     });
+  }
 
-  });
+  nextPartition();
 }
 
 if (require.main === module) {

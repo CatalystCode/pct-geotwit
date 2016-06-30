@@ -10,13 +10,10 @@
   "license": "ISC",
   "dependencies": {
     "azure": "^0.10.6",
-    "azure-event-hubs": "0.0.2",
-    "bluebird": "^3.4.1",
-    "guid": "0.0.12",
+    "geolib": "^2.0.21",
     "nconf": "^0.8.4"
   },
   "files": [
-    "./run.js",
-    "./lib/EventProcessorHost.js"
+    "./run.js"
   ]
 }
