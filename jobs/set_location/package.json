@@ -1,7 +1,7 @@
 {
-  "name": "infer_location",
+  "name": "set_location",
   "version": "1.0.0",
-  "description": "Build, stream-wide, the user->location mapping",
+  "description": "Average out locations for users that have reported one",
   "main": "run.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
