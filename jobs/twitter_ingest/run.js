@@ -84,6 +84,7 @@ function processTweet(tweet, tableService, queueService) {
   tableService.insertEntity(TABLE, row, (err, result, response) => {
     if (err) {
       console.warn("inserting tweet");
+      console.warn(response);
       console.warn(err.stack);
     }
   });
