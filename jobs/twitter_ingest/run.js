@@ -2,6 +2,9 @@ var nconf = require("nconf")
 var azure = require("azure")
 var twitter = require("twitter")
 
+var TABLE = "tweets";
+var QUEUE = "tweetq";
+
 var config = nconf.env().file({ file: '../../localConfig.json' });
 
 function filter(filters, cb) {
@@ -26,11 +29,22 @@ function filter(filters, cb) {
   );
 }
 
-function process_tweet(tweet, tableService) {
+function processTweet(tweet, tableService, queueService) {
 
   function add(r, k, v) {
     r[k] = { _ : v };
   }
+
+  function detablify(t) {
+    var o = {};
+    for (var k in t) {
+      if (k[0] != '.') {
+        o[k] = t[k]._;
+      }
+    }
+    return o;
+  }
+
 
   /* Hmm.. batching often errors with 'one of the inputs is invalid'
      that we don't see when we just hammer the Table.
@@ -66,24 +80,23 @@ function process_tweet(tweet, tableService) {
   add(row, "in_reply_to", tweet.in_reply_to_user_id);
   add(row, "place", JSON.stringify(tweet.place));
   add(row, "geo", JSON.stringify(tweet.geo));
-  add(row, "isotimestamp", new Date(tweet.timestamp_ms);
 
-  tableService.insertOrReplaceEntity("tweets", row, (err, result) => {
+  tableService.insertEntity(TABLE, row, (err, result, response) => {
     if (err) {
-      console.log("inserting tweet: " + err);
+      console.warn("inserting tweet");
+      console.warn(err.stack);
     }
   });
-}
 
-function init(cb) {
-
-  var tableService = azure.createTableService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
-  );
-
-  tableService.createTableIfNotExists("tweets", function(err, result) {
-    cb(err, tableService);
+  var msg = JSON.stringify(detablify(row));
+  queueService.createMessage(QUEUE, msg, (err, result) => {
+    if (err) {
+      console.warn("queueing tweet");
+      console.warn(err.stack);
+    }
+    else {
+      console.log(result);
+    }
   });
 }
 
@@ -122,50 +135,80 @@ function getKeywordList() {
     return Promise.all(all);
   }).then((results) => {
     return results.map((x) => { return x.trim(); }).join(",").split(",");
+  })
+  .catch((err) => {
+    console.warn(err.stack);
   });
 
   return promise;
 }
 
 function main() {
-  init((err, tableService) => {
 
+  var tableService = azure.createTableService(
+    config.get("AZURE_STORAGE_ACCOUNT"),
+    config.get("AZURE_STORAGE_ACCESS_KEY")
+  );
+
+  var queueService = azure.createQueueService(
+    config.get("AZURE_STORAGE_ACCOUNT"),
+    config.get("AZURE_STORAGE_ACCESS_KEY")
+  );
+
+  tableService.createTableIfNotExists(TABLE, (err, result) => {
     if (err) {
-      console.log(err);
+      console.warn("createTable");
+      console.warn(err.stack);
       process.exit(1);
     }
 
-    var filterSpec = {};
-
-    var bbox = config.get("twitter_ingest_bbox");
-    if (bbox) {
-      filterSpec.locations = bbox;
-    }
-
-    getKeywordList().then((keywords) => {
-      if (keywords.length > 400) {
-        console.warn("filter: >400 keywords, truncating");
-        keywords = keywords.slice(0, 399);
+    queueService.createQueueIfNotExists(QUEUE, (err, result) => {
+      if (err) {
+        console.warn("createTable");
+        console.warn(err.stack);
+        process.exit(1);
       }
 
-      if (keywords) {
-        filterSpec.track = keywords.join(",");
+      var filterSpec = {};
+
+      var bbox = config.get("twitter_ingest_bbox");
+      if (bbox) {
+        filterSpec.locations = bbox;
       }
 
-      console.log(filterSpec);
+      getKeywordList().then((keywords) => {
 
-      filter(
-        filterSpec,
-        function(err, tweet) {
-          if (err) {
-            console.warn("twitter: " + err);
-            process.exit(1);
-          }
-          process_tweet(tweet, tableService);
+        if (keywords.length > 400) {
+          console.warn("filter: >400 keywords, truncating");
+          keywords = keywords.slice(0, 399);
         }
-      );
-    });
 
+        if (keywords) {
+          filterSpec.track = keywords.join(",");
+        }
+
+        filterSpec.language = "in";
+
+        console.log("== Filter Spec ==");
+        console.log(filterSpec);
+
+        filter(
+          filterSpec,
+          (err, tweet) => {
+            if (err) {
+              console.warn("twitter");
+              console.warn(err.stack);
+              process.exit(1);
+            }
+            processTweet(tweet, tableService, queueService);
+          }
+        );
+
+      })
+      .catch((err) => {
+        console.log(err.stack);
+      });
+    });
   });
 }
 
