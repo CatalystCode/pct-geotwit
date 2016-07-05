@@ -94,9 +94,6 @@ function processTweet(tweet, tableService, queueService) {
       console.warn("queueing tweet");
       console.warn(err.stack);
     }
-    else {
-      console.log(result);
-    }
   });
 }
 
@@ -133,6 +130,7 @@ function getKeywordList() {
       }));
     }
     return Promise.all(all);
+
   }).then((results) => {
     return results.map((x) => { return x.trim(); }).join(",").split(",");
   })
