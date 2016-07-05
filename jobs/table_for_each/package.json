@@ -1,7 +1,7 @@
 {
-  "name": "build_user_graph",
+  "name": "table_for_each",
   "version": "1.0.0",
-  "description": "Build the user graph from a queue of tweets",
+  "description": "Iterate a complete table",
   "main": "run.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -10,7 +10,6 @@
   "license": "ISC",
   "dependencies": {
     "azure": "^0.10.6",
-    "geolib": "^2.0.21",
     "nconf": "^0.8.4"
   },
   "files": [
