@@ -17,6 +17,35 @@ function detablify(t) {
 var updated = 0;
 var processed = 0;
 
+var writeQueue = [];
+var errorQueue = [];
+var outstandingWrites = 0;
+var MAX_PARALLEL_WRITES = 100;
+
+function pumpWriteQueue(tableService) {
+
+  while (writeQueue.length > 0 && outstandingWrites < MAX_PARALLEL_WRITES) {
+
+    outstandingWrites++;
+    var entry = writeQueue.shift();
+
+    tableService.insertOrReplaceEntity(TABLE, entry, (err, result) => {
+
+      if (err) {
+        errorQueue.push(entry);
+        console.warn(err);
+      }
+
+      updated++;
+      outstandingWrites--;
+
+      process.nextTick(() => {
+        pumpWriteQueue(tableService);
+      });
+    });
+  }
+}
+
 function writeUser(tableService, u) {
 
   function add(r, k, v) {
@@ -33,18 +62,34 @@ function writeUser(tableService, u) {
     }
   }
 
-  console.log(row);
-  tableService.insertOrReplaceEntity(TABLE, row, (err, result) => {
-    if (err) {
-      console.warn("insert: " + err);
-      console.log(row);
-    }
-    updated++;
-  });
+  writeQueue.push(row);
+  pumpWriteQueue(tableService);
 }
 
 function foreach(tableService, user) {
 
+  var update = false;
+  var location = JSON.parse(user.location);
+
+  if (location.lat != undefined) {
+    update = true;
+    location.latitude = location.lat;
+    delete location.lat;
+  }
+  if (location.lon != undefined) {
+    update = true;
+    location.longitude = location.lon;
+    delete location.lon;
+  }
+
+  processed++;
+  if (update == true) {
+    user.location = location;
+    writeUser(tableService, user);
+  }
+}
+
+/*
   var new_locations = [];
   var locations = JSON.parse(user.locations);
 
@@ -72,7 +117,7 @@ function foreach(tableService, user) {
     writeUser(tableService, user);
   }
   processed++;
-}
+}*/
 
 function main() {
 
@@ -90,23 +135,30 @@ function main() {
   function nextBatch(continuationToken) {
     tableService.queryEntities(TABLE, null, continuationToken, (err, result) => {
       if (err) {
+        console.warn("query");
         console.warn(err);
-        process.exit(1);
+        setTimeout(() => {
+          nextBatch(continuationToken);
+        }, 500);
+        return;
       }
+
       processBatch(result.entries);
+
       if (result.continuationToken) {
         process.nextTick(() => {
           nextBatch(result.continuationToken);
           console.log("Processed: " + processed);
           console.log("Updated: " + updated);
+          console.log("WriteQueue: " + writeQueue.length);
         });
       }
       else {
         console.log("done");
       }
+
     });
   }
-
   nextBatch(null);
 }
 
