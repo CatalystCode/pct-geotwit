@@ -1,6 +1,7 @@
 var azure = require("azure");
 var nconf = require("nconf");
 var EventHubClient = require("azure-event-hubs").Client;
+var table = require("../../pct-webjobtemplate/lib/azure-storage-tools").table;
 
 var TABLE = "tweets";
 var config = nconf.env().file({ file: '../../localConfig.json' });
@@ -17,40 +18,28 @@ function main() {
     config.get("twitter_to_location_write_config")
   );
 
-  var complete = 0;
-  function processBatch(entries) {
-    for (var entry of entries) {
-      eventHubSender.send(entry);
-    }
-  }
-
-  function nextBatch(continuationToken) {
-    tableService.queryEntities(TABLE, null, continuationToken, (err, result) => {
-      if (err) {
-        console.warn(err);
-        process.exit(1);
-      }
-      processBatch(result.entries);
-      if (result.continuationToken) {
-        process.nextTick(() => {
-          nextBatch(result.continuationToken);
-        });
-      }
-      else {
-        console.log("Complete: " + complete);
-      }
-    });
-  }
-
   eventHubClient.createSender()
   .then((tx) => {
-    eventHubSender = tx;
-    eventHubSender.on("errorReceived", (err) => {
+
+    tx.on("errorReceived", (err) => {
       console.warn("eventhubsender: " + err);
     });
-    nextBatch(null);
-  });
 
+    table.forEach(tableService, TABLE,
+      (e) => {
+        tx.send(table.detablify(e));
+      },
+      (err, result) => {
+        if (err) {
+          console.warn(err.stack);
+        }
+        else {
+          console.log("done.");
+          console.log(result + " entries");
+        }
+      }
+    );
+  });
 }
 
 if (require.main === module) {
