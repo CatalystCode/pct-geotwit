@@ -1,18 +1,9 @@
 var azure = require("azure");
 var nconf = require("nconf");
+var azure_storage_tools = require("../../pct-webjobtemplate/lib/azure-storage-tools");
 
 var TABLE = "users";
 var config = nconf.env().file({ file: '../../localConfig.json' });
-
-function detablify(t) {
-  var o = {};
-  for (var k in t) {
-    if (k[0] != '.') {
-      o[k] = t[k]._;
-    }
-  }
-  return o;
-}
 
 var updated = 0;
 var processed = 0;
@@ -66,7 +57,7 @@ function writeUser(tableService, u) {
   pumpWriteQueue(tableService);
 }
 
-function foreach(tableService, user) {
+/*function foreach(tableService, user) {
 
   var update = false;
   var location = JSON.parse(user.location);
@@ -87,6 +78,10 @@ function foreach(tableService, user) {
     user.location = location;
     writeUser(tableService, user);
   }
+}*/
+
+function foreach(tableService, user) {
+
 }
 
 /*
@@ -121,45 +116,26 @@ function foreach(tableService, user) {
 
 function main() {
 
+  console.log(azure_storage_tools);
+
   var tableService = azure.createTableService(
     config.get("AZURE_STORAGE_ACCOUNT"),
     config.get("AZURE_STORAGE_ACCESS_KEY")
   );
 
-  function processBatch(entries) {
-    for (var entry of entries) {
-      foreach(tableService, detablify(entry));
+  function processEntry(e) {
+    //console.log(e);
+  }
+
+  var start = Date.now();
+  azure_storage_tools.table.forEach(tableService, TABLE, processEntry, (err, result) => {
+    if (err) {
+      console.warn(err.stack);
+      process.exit(1);
     }
-  }
-
-  function nextBatch(continuationToken) {
-    tableService.queryEntities(TABLE, null, continuationToken, (err, result) => {
-      if (err) {
-        console.warn("query");
-        console.warn(err);
-        setTimeout(() => {
-          nextBatch(continuationToken);
-        }, 500);
-        return;
-      }
-
-      processBatch(result.entries);
-
-      if (result.continuationToken) {
-        process.nextTick(() => {
-          nextBatch(result.continuationToken);
-          console.log("Processed: " + processed);
-          console.log("Updated: " + updated);
-          console.log("WriteQueue: " + writeQueue.length);
-        });
-      }
-      else {
-        console.log("done");
-      }
-
-    });
-  }
-  nextBatch(null);
+    console.log("Processed: " + result + " entries");
+    console.log((Date.now() - start) + "ms");
+  });
 }
 
 if (require.main === module) {

@@ -146,7 +146,7 @@ function processUser(tableService, user, iteration) {
         var latlons = [];
         if (results.length > 0) {
           for (var result of results) {
-            if (result) {
+            if (result && result.entries.length > 0) {
               var loc;
               if (iteration == 1) {
                 // First iteration, we only average over known locations
@@ -211,8 +211,6 @@ function processUser(tableService, user, iteration) {
 }
 
 function processPartition(tableService, partition, iteration, cb) {
-
-  console.log("Processing " + partition);
 
   var query = new azure.TableQuery().where("PartitionKey == ?", partition);
 
@@ -284,7 +282,7 @@ function main() {
     console.log("Iteration: " + iteration);
 
     var partitions = [];
-    for (var partition = 10; partition < 11; partition++) {
+    for (var partition = 10; partition < 100; partition++) {
       partitions.push(partition.toString());
     }
 
