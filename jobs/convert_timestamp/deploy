@@ -1,3 +1,0 @@
-#!/bin/sh
-TOOLS_DIR=../../pct-webjobtemplate/tools
-node $TOOLS_DIR/deployWebJob/run.js . --job-type=triggered --job-name=convert_timestamp --site-name=pct-geotwit
