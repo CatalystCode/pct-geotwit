@@ -1,19 +1,12 @@
 var azure = require("azure");
 var nconf = require("nconf");
 var geolib = require("geolib");
+var table = require("../../pct-webjobtemplate/lib/azure-storage-tools").table;
+
+require("https").globalAgent.maxSockets = 128;
 
 var TABLE = "users";
 var config = nconf.env().file({ file: '../../localConfig.json' });
-
-function detablify(t) {
-  var o = {};
-  for (var k in t) {
-    if (k[0] != '.') {
-      o[k] = t[k]._;
-    }
-  }
-  return o;
-}
 
 var processed = 0;
 var inferences = 0;
@@ -30,8 +23,6 @@ function writeFinalLocation(tableService, user, location, confidence, cb) {
   };
 
   tableService.mergeEntity(TABLE, mergeUser, (err, result) => {
-    if (!err) {
-    }
     if (cb)
       cb(err, result);
   });
@@ -52,7 +43,6 @@ function clearInferredLocation(tableService, user, cb) {
       cb(err, result);
   });
 }
-
 
 function writeInferredLocation(tableService, user, location, iteration, cb) {
 
@@ -217,7 +207,7 @@ function processPartition(tableService, partition, iteration, cb) {
   function processBatch(tableService, entries) {
     var all = [];
     for (var entry of entries) {
-      var user = detablify(entry);
+      var user = table.detablify(entry);
       all.push(processUser(tableService, user, iteration));
     }
     return Promise.all(all);
@@ -270,7 +260,6 @@ function main() {
     config.get("AZURE_STORAGE_ACCOUNT"),
     config.get("AZURE_STORAGE_ACCESS_KEY")
   );
-
 
   function nextPartition(partition, iteration, cb) {
     console.log("Partition: " + partition);
