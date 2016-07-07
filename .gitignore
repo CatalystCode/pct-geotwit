@@ -34,3 +34,6 @@ node_modules
 
 # localConfig.json
 localConfig.json
+
+# .vscode folder files
+.vscode
