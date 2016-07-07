@@ -65,8 +65,8 @@ function updateRepliedBy(tableService, userId, repliedBy) {
         user.replied_to = [];
         user.replied_by = [];
         user.location = {
-          "lat" : random(-90, 90),
-          "lon" : random(-180, 180),
+          "latitude" : random(-90, 90),
+          "longitude" : random(-180, 180),
           "confidence" : 0
         }; // A random location to start with
       }
