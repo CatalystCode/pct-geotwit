@@ -1,19 +1,10 @@
 var azure = require("azure");
 var nconf = require("nconf");
+var table = require("../../pct-webjobtemplate/lib/azure-storage-tools").table;
 
 var TABLE = "tweets";
 var QUEUE = "tweetsq";
 var config = nconf.env().file({ file: '../../localConfig.json' });
-
-function detablify(t) {
-  var o = {};
-  for (var k in t) {
-    if (k[0] != '.') {
-      o[k] = t[k]._;
-    }
-  }
-  return o;
-}
 
 function main() {
 
@@ -41,38 +32,26 @@ function main() {
     });
   };
 
-  function processBatch(entries) {
-    for (var entry of entries) {
-      var msg = JSON.stringify(detablify(entry));
-      enqueueMessage(queueService, msg);
-    }
-  }
-
-  function nextBatch(continuationToken) {
-    tableService.queryEntities(TABLE, null, continuationToken, (err, result) => {
-      if (err) {
-        console.warn(err);
-        process.exit(1);
-      }
-      processBatch(result.entries);
-      if (result.continuationToken) {
-        process.nextTick(() => {
-          nextBatch(result.continuationToken);
-        });
-      }
-      else {
-        console.log("Complete: " + complete);
-      }
-    });
-  }
-
   queueService.createQueueIfNotExists(QUEUE, (err, result) => {
     if (err) {
-      console.warn("createQueue");
-      console.warn(err);
+      console.warn(err.stack);
       process.exit(1);
     }
-    nextBatch(null);
+
+    table.forEach(tableService, TABLE,
+      (e) => {
+        enqueueMessage(queueService, JSON.stringify(table.detablify(e)));
+      },
+      (err, result) => {
+        if (err) {
+          console.warn(err.stack);
+        }
+        else {
+          console.log("done");
+          console.log(result + " entries");
+        }
+      }
+    );
   });
 }
 
