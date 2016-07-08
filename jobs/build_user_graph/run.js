@@ -199,7 +199,6 @@ function processMessage(tableService, queueService, msg, cb) {
   // Arbitrarily partition user table on first two digits of user id
   var userId = msg.user_id.toString();
   var partKey = userId.slice(0, 2);
-  console.log(msg);
 
   var tableQuery = new azure.TableQuery().where("PartitionKey == ?", partKey)
   .and("RowKey == ?", userId);
