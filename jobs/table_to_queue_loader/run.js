@@ -2,20 +2,21 @@ var azure = require("azure");
 var nconf = require("nconf");
 var table = require("../../pct-webjobtemplate/lib/azure-storage-tools").table;
 
-var TABLE = "tweets";
-var QUEUE = "tweetsq";
+
 var config = nconf.env().file({ file: '../../localConfig.json' });
+var TABLE = config.get("TWEET_TABLE_NAME");
+var QUEUE = config.get("TWEET_USERGRAPH_QUEUE_NAME");
 
 function main() {
 
   var tableService = azure.createTableService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    config.get("STORAGE_ACCOUNT"),
+    config.get("STORAGE_KEY")
   );
 
   var queueService = azure.createQueueService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    config.get("STORAGE_ACCOUNT"),
+    config.get("STORAGE_KEY")
   );
 
   var complete = 0;

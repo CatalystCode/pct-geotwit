@@ -1,19 +1,38 @@
-var nconf = require("nconf")
-var azure = require("azure")
-var twitter = require("twitter")
+var async = require('async');
+var azure = require('azure-storage');
+var twitter = require('twitter');
+var nconf = require('nconf');
+var moment = require('moment');
 
-var TABLE = "tweets";
-var QUEUE = "tweetq";
+nconf.file({ file: 'localConfig.json', search: true }).env();
 
-var config = nconf.env().file({ file: '../../localConfig.json' });
+console.log(nconf.get("STORAGE_ACCOUNT"));
+console.log(nconf.get("STORAGE_KEY"));
+
+var USERGRAPH_QUEUE_NAME = nconf.get("TWEET_USERGRAPH_QUEUE_NAME");
+console.log(USERGRAPH_QUEUE_NAME);
+var PIPELINE_QUEUE_NAME = nconf.get("TWEET_PIPELINE_QUEUE_NAME");
+console.log(PIPELINE_QUEUE_NAME);
+var TABLE_NAME = nconf.get("TWEET_TABLE_NAME");
+console.log(TABLE_NAME);
+
+var tableService = azure.createTableService(
+  nconf.get("STORAGE_ACCOUNT"),
+  nconf.get("STORAGE_KEY")
+);
+
+var queueService = azure.createQueueService(
+  nconf.get("STORAGE_ACCOUNT"),
+  nconf.get("STORAGE_KEY")
+);
 
 function filter(filters, cb) {
 
   var client = new twitter({
-    consumer_key: config.get("consumer_key"),
-    consumer_secret: config.get("consumer_key_secret"),
-    access_token_key: config.get("access_token"),
-    access_token_secret: config.get("access_token_secret")
+  consumer_key: nconf.get("TWITTER_CONSUMER_KEY"),
+  consumer_secret: nconf.get("TWITTER_CONSUMER_SECRET"),
+  access_token_key: nconf.get("TWITTER_ACCESS_TOKEN_KEY"),
+  access_token_secret: nconf.get("TWITTER_ACCESS_TOKEN_SECRET")
   });
 
   client.stream(
@@ -81,7 +100,7 @@ function processTweet(tweet, tableService, queueService) {
   add(row, "place", JSON.stringify(tweet.place));
   add(row, "geo", JSON.stringify(tweet.geo));
 
-  tableService.insertEntity(TABLE, row, (err, result, response) => {
+  tableService.insertEntity(TABLE_NAME, row, (err, result, response) => {
     if (err) {
       console.warn("inserting tweet");
       console.warn(response);
@@ -90,24 +109,54 @@ function processTweet(tweet, tableService, queueService) {
   });
 
   var msg = JSON.stringify(detablify(row));
-  queueService.createMessage(QUEUE, msg, (err, result) => {
+  // add the message for user graph processing
+  queueService.createMessage(USERGRAPH_QUEUE_NAME, msg, (err, result) => {
     if (err) {
       console.warn("queueing tweet");
       console.warn(err.stack);
     }
   });
+  ingestTweet(tweet);
 }
 
+function ingestTweet(tweet){
+    var iso_8601_created_at = moment(tweet.created_at, 'dd MMM DD HH:mm:ss ZZ YYYY', 'en');
+    var tweetEssentials = {
+        // we use moment.js to pars the "strange"" Twitter dateTime format
+        created_at:  iso_8601_created_at,
+        id: tweet.id,
+        geo: tweet.geo,
+        lang: tweet.lang,
+        source: tweet.source,
+        text: tweet.text,
+        user_id: tweet.user.id,
+        user_followers_count: tweet.user.followers_count,
+        user_friends_count: tweet.user.friends_count,
+        user_name: tweet.user.name,
+    };
+    var message = {
+        source: 'twitter',
+        created_at: iso_8601_created_at,
+        message: tweetEssentials
+    }
+
+    queueService.createMessage(PIPELINE_QUEUE_NAME, JSON.stringify(message), function(err, result, response) {
+        if (err) {
+            console.log('error: ' + err);
+        }
+        console.log('success');
+    });
+}
 function getKeywordList() {
 
-  var refDataContainer = config.get("REFERENCE_DATA_CONTAINER_NAME");
+  var refDataContainer = nconf.get("REFERENCE_DATA_BLOB_CONTAINER");
   if (!refDataContainer) {
     return null;
   }
 
   var blobService = azure.createBlobService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    nconf.get("STORAGE_ACCOUNT"),
+    nconf.get("STORAGE_KEY")
   );
 
   var promise = new Promise((resolve, reject) => {
@@ -145,69 +194,75 @@ function getKeywordList() {
 function main() {
 
   var tableService = azure.createTableService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    nconf.get("STORAGE_ACCOUNT"),
+    nconf.get("STORAGE_KEY")
   );
 
   var queueService = azure.createQueueService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    nconf.get("STORAGE_ACCOUNT"),
+    nconf.get("STORAGE_KEY")
   );
 
-  tableService.createTableIfNotExists(TABLE, (err, result) => {
+  tableService.createTableIfNotExists(TABLE_NAME, (err, result) => {
     if (err) {
       console.warn("createTable");
       console.warn(err.stack);
       process.exit(1);
     }
 
-    queueService.createQueueIfNotExists(QUEUE, (err, result) => {
+    queueService.createQueueIfNotExists(USERGRAPH_QUEUE_NAME, (err, result) => {
       if (err) {
-        console.warn("createTable");
+        console.warn("create user graph queue");
         console.warn(err.stack);
         process.exit(1);
       }
-
-      var filterSpec = {};
-
-      var bbox = config.get("twitter_ingest_bbox");
-      if (bbox) {
-        filterSpec.locations = bbox;
-      }
-
-      getKeywordList().then((keywords) => {
-
-        if (keywords.length > 400) {
-          console.warn("filter: >400 keywords, truncating");
-          keywords = keywords.slice(0, 399);
-        }
-
-        if (keywords) {
-          filterSpec.track = keywords.join(",");
-        }
-
-        filterSpec.language = "in";
-
-        console.log("== Filter Spec ==");
-        console.log(filterSpec);
-
-        filter(
-          filterSpec,
-          (err, tweet) => {
-            if (err) {
-              console.warn("twitter");
-              console.warn(err.stack);
-              process.exit(1);
-            }
-            processTweet(tweet, tableService, queueService);
+      queueService.createQueueIfNotExists(PIPELINE_QUEUE_NAME, (err, result) => {
+          if (err) {
+            console.warn("create user graph queue");
+            console.warn(err.stack);
+            process.exit(1);
           }
-        );
+          var filterSpec = {};
 
-      })
-      .catch((err) => {
-        console.log(err.stack);
-      });
-    });
+          var bbox = nconf.get("BOUNDING_BOX");
+          if (bbox) {
+            filterSpec.locations = bbox;
+          }
+
+          getKeywordList().then((keywords) => {
+
+            if (keywords.length > 400) {
+              console.warn("filter: >400 keywords, truncating");
+              keywords = keywords.slice(0, 399);
+            }
+
+            if (keywords) {
+              filterSpec.track = keywords.join(",");
+            }
+
+            filterSpec.language = "in";
+
+            console.log("== Filter Spec ==");
+            console.log(filterSpec);
+
+            filter(
+              filterSpec,
+              (err, tweet) => {
+                if (err) {
+                  console.warn("twitter");
+                  console.warn(err.stack);
+                  process.exit(1);
+                }
+                processTweet(tweet, tableService, queueService);
+              }
+            );
+
+          })
+          .catch((err) => {
+            console.log(err.stack);
+          });
+        })
+    })
   });
 }
 

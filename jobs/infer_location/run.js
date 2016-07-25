@@ -1,12 +1,12 @@
 var azure = require("azure");
 var nconf = require("nconf");
 var geolib = require("geolib");
-var table = require("../../pct-webjobtemplate/lib/azure-storage-tools").table;
+var table = require("azure-storage-tools").table;
 
 require("https").globalAgent.maxSockets = 128;
 
-var TABLE = "users";
 var config = nconf.env().file({ file: '../../localConfig.json' });
+var TABLE = config.get("USER_TABLE");
 
 var processed = 0;
 var inferences = 0;
@@ -252,13 +252,13 @@ function main() {
   // Add a timestamp that the Azure DataFactory can actually read
 
   var tableService = azure.createTableService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    config.get("STORAGE_ACCOUNT"),
+    config.get("STORAGE_KEY")
   );
 
   var queueService = azure.createQueueService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    config.get("STORAGE_ACCOUNT"),
+    config.get("STORAGE_KEY")
   );
 
   function nextPartition(partition, iteration, cb) {

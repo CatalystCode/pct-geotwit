@@ -2,10 +2,9 @@ var azure = require("azure");
 var nconf = require("nconf");
 var geolib = require("geolib");
 
-var QUEUE = "tweetq";
-var USER_TABLE = "users";
-
 var config = nconf.env().file({ file: '../../localConfig.json' });
+var USER_TABLE = config.get("USER_TABLE");
+var QUEUE = config.get("TWEET_USERGRAPH_QUEUE_NAME");
 
 function random(low, high) {
   return Math.random() * (high - low) + low;
@@ -320,13 +319,13 @@ function main() {
   // Add a timestamp that the Azure DataFactory can actually read
 
   var tableService = azure.createTableService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    config.get("STORAGE_ACCOUNT"),
+    config.get("STORAGE_KEY")
   );
 
   var queueService = azure.createQueueService(
-    config.get("AZURE_STORAGE_ACCOUNT"),
-    config.get("AZURE_STORAGE_ACCESS_KEY")
+    config.get("STORAGE_ACCOUNT"),
+    config.get("STORAGE_KEY")
   );
 
   tableService.createTableIfNotExists(USER_TABLE, (err, result) => {
