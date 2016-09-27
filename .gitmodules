@@ -1,4 +1,0 @@
-[submodule "pct-webjobtemplate"]
-	path = pct-webjobtemplate
-	url = git@github.com:CatalystCode/pct-webjobtemplate.git
-	branch = master
