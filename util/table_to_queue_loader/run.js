@@ -1,22 +1,22 @@
+'use strict';
+
 var azure = require("azure");
 var nconf = require("nconf");
-var table = require("../../pct-webjobtemplate/lib/azure-storage-tools").table;
 
-
-var config = nconf.env().file({ file: '../../localConfig.json' });
-var TABLE = config.get("TWEET_TABLE_NAME");
-var QUEUE = config.get("TWEET_USERGRAPH_QUEUE_NAME");
+var config = nconf.env().argv();
+var TABLE = config.get('table');
+var QUEUE = config.get('queue');
 
 function main() {
 
   var tableService = azure.createTableService(
-    config.get("STORAGE_ACCOUNT"),
-    config.get("STORAGE_KEY")
+    config.get("table_account_name"),
+    config.get("table_account_key")
   );
 
   var queueService = azure.createQueueService(
-    config.get("STORAGE_ACCOUNT"),
-    config.get("STORAGE_KEY")
+    config.get("queue_account_name"),
+    config.get("queue_account_key")
   );
 
   var complete = 0;
