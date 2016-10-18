@@ -1,19 +1,19 @@
 {
   "name": "twitter_ingest",
   "version": "1.0.0",
-  "description": "Twitter ingest tool for Fortis",
+  "description": "Twitter ingest tool for PCT-Geotwit",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "tobybrad",
   "license": "ISC",
-  "files" : [
+  "files": [
     "run.js",
     "settings.job"
   ],
   "dependencies": {
-    "azure": "^0.10.6",
+    "azure-storage": "^1.3.1",
     "nconf": "^0.8.4",
     "twitter": "^1.3.0"
   }

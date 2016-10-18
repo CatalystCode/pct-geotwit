@@ -1,81 +1,49 @@
-var async = require('async');
-var azure = require('azure-storage');
-var twitter = require('twitter');
+'use strict';
+
+var fs = require('fs');
 var nconf = require('nconf');
-var moment = require('moment');
+var twitter = require('twitter');
 
-nconf.file({ file: 'localConfig.json', search: true }).env();
+function filter(config, cb) {
 
-console.log(nconf.get("STORAGE_ACCOUNT"));
-console.log(nconf.get("STORAGE_KEY"));
-
-var USERGRAPH_QUEUE_NAME = nconf.get("TWEET_USERGRAPH_QUEUE_NAME");
-console.log(USERGRAPH_QUEUE_NAME);
-var PIPELINE_QUEUE_NAME = nconf.get("TWEET_PIPELINE_QUEUE_NAME");
-console.log(PIPELINE_QUEUE_NAME);
-var TABLE_NAME = nconf.get("TWEET_TABLE_NAME");
-console.log(TABLE_NAME);
-
-var tableService = azure.createTableService(
-  nconf.get("STORAGE_ACCOUNT"),
-  nconf.get("STORAGE_KEY")
-);
-
-var queueService = azure.createQueueService(
-  nconf.get("STORAGE_ACCOUNT"),
-  nconf.get("STORAGE_KEY")
-);
-
-function filter(filters, cb) {
+  config.required(['tweet_filter']);
+  console.log(config.get());
 
   var client = new twitter({
-  consumer_key: nconf.get("TWITTER_CONSUMER_KEY"),
-  consumer_secret: nconf.get("TWITTER_CONSUMER_SECRET"),
-  access_token_key: nconf.get("TWITTER_ACCESS_TOKEN_KEY"),
-  access_token_secret: nconf.get("TWITTER_ACCESS_TOKEN_SECRET")
+    consumer_key: config.get('twitter_consumer_key'),
+    consumer_secret: config.get('twitter_secret'),
+    access_token_key: config.get('twitter_access_token'),
+    access_token_secret: config.get('twitter_access_token_secret')
   });
 
   client.stream(
-    "/statuses/filter", filters,
+    '/statuses/filter', config.get('tweet_filter'),
     function(stream) {
-      stream.on("error", function(err) {
+      stream.on('error', function(err) {
         cb(err, null);
       });
-      stream.on("data", function(tweets) {
+      stream.on('data', function(tweets) {
         cb(null, tweets);
       });
     }
   );
 }
 
-function processTweet(tweet, tableService, queueService) {
+function processTweet(tweet, pipeline) {
 
-  function add(r, k, v) {
-    r[k] = { _ : v };
-  }
-
-  function detablify(t) {
-    var o = {};
-    for (var k in t) {
-      if (k[0] != '.') {
-        o[k] = t[k]._;
-      }
-    }
-    return o;
-  }
-
+  console.log(tweet);
 
   /* Hmm.. batching often errors with 'one of the inputs is invalid'
      that we don't see when we just hammer the Table.
 
   function sendBatch(batch, retries) {
-    tableService.executeBatch("tweets", batch, function(error, result) {
+    tableService.executeBatch('tweets', batch, function(error, result) {
       if (error) {
         if (retries > 0) {
-          console.log("retrying : " + error);
+          console.log('retrying : ' + error);
           setTimeout(() => { sendBatch(batch, --retries); }, 10000);
         } else {
-          console.log("inserting tweet: " + error);
+          console.log('inserting tweet: ' + error);
         }
       }
     });
@@ -88,184 +56,71 @@ function processTweet(tweet, tableService, queueService) {
     return;
   }
 
-  var row = {};
-  add(row, "PartitionKey", Math.floor(tweet.timestamp_ms / (24 * 60 * 60 * 1000)).toString());
-  add(row, "RowKey", tweet.id.toString());
-  add(row, "user_id", tweet.user.id);
-  add(row, "user_screen_name", tweet.user.screen_name);
-  add(row, "timestamp", tweet.timestamp_ms);
-  add(row, "text", tweet.text);
-  add(row, "lang", tweet.lang);
-  add(row, "in_reply_to", tweet.in_reply_to_user_id);
-  add(row, "place", JSON.stringify(tweet.place));
-  add(row, "geo", JSON.stringify(tweet.geo));
-
-  tableService.insertEntity(TABLE_NAME, row, (err, result, response) => {
-    if (err) {
-      console.warn("inserting tweet");
-      console.warn(response);
-      console.warn(err.stack);
-    }
-  });
-
-  var msg = JSON.stringify(detablify(row));
-  // add the message for user graph processing
-  queueService.createMessage(USERGRAPH_QUEUE_NAME, msg, (err, result) => {
-    if (err) {
-      console.warn("queueing tweet");
-      console.warn(err.stack);
-    }
-  });
-  ingestTweet(tweet);
+  //ingestTweet(tweet);
 }
 
 function ingestTweet(tweet){
-    var iso_8601_created_at = moment(tweet.created_at, 'dd MMM DD HH:mm:ss ZZ YYYY', 'en');
-    var tweetEssentials = {
-        // we use moment.js to pars the "strange"" Twitter dateTime format
-        created_at:  iso_8601_created_at,
-        id: tweet.id,
-        geo: tweet.geo,
-        lang: tweet.lang,
-        source: tweet.source,
-        text: tweet.text,
-        user_id: tweet.user.id,
-        user_followers_count: tweet.user.followers_count,
-        user_friends_count: tweet.user.friends_count,
-        user_name: tweet.user.name,
-    };
-    var message = {
-        source: 'twitter',
-        created_at: iso_8601_created_at,
-        message: tweetEssentials
-    }
+  // we use moment.js to parse the 'strange'' Twitter dateTime format
+  var iso_8601_created_at = moment(tweet.created_at, 'dd MMM DD HH:mm:ss ZZ YYYY', 'en');
 
-    queueService.createMessage(PIPELINE_QUEUE_NAME, JSON.stringify(message), function(err, result, response) {
-        if (err) {
-            console.log('error: ' + err);
-        }
-        console.log('success');
-    });
-}
-function getKeywordList() {
+  var tweetEssentials = {
+    created_at:  iso_8601_created_at,
+    id: tweet.id,
+    geo: tweet.geo,
+    lang: tweet.lang,
+    source: tweet.source,
+    text: tweet.text,
+    user_id: tweet.user.id,
+    user_followers_count: tweet.user.followers_count,
+    user_friends_count: tweet.user.friends_count,
+    user_name: tweet.user.name,
+  };
 
-  var refDataContainer = nconf.get("REFERENCE_DATA_BLOB_CONTAINER");
-  if (!refDataContainer) {
-    return null;
+  var message = {
+    source: 'twitter',
+    created_at: iso_8601_created_at,
+    message: tweetEssentials
   }
 
-  var blobService = azure.createBlobService(
-    nconf.get("STORAGE_ACCOUNT"),
-    nconf.get("STORAGE_KEY")
-  );
-
-  var promise = new Promise((resolve, reject) => {
-    blobService.listBlobsSegmentedWithPrefix(refDataContainer, "keywords", null, (err, result) => {
+  queueService.createMessage(
+    PIPELINE_QUEUE_NAME, 
+    JSON.stringify(message), 
+    function(err, result, response) {
       if (err) {
-        console.warn("blob: " + err);
-        reject(err);
+        console.log('error: ' + err);
       }
-      resolve(result.entries);
-    });
-  }).then((files) => {
-
-    var all = [];
-    for (var file of files) {
-      all.push(new Promise((resolve, reject) => {
-        blobService.getBlobToText(refDataContainer, file.name, (err, result) => {
-          if (err) {
-          }
-          resolve("" + result);
-        });
-      }));
+      console.log('success');
     }
-    return Promise.all(all);
-
-  }).then((results) => {
-    return results.map((x) => { return x.trim(); }).join(",").split(",");
-  })
-  .catch((err) => {
-    console.warn(err.stack);
-  });
-
-  return promise;
+  );
 }
 
 function main() {
 
-  var tableService = azure.createTableService(
-    nconf.get("STORAGE_ACCOUNT"),
-    nconf.get("STORAGE_KEY")
-  );
+  nconf.defaults({config:'localConfig.json'});
 
-  var queueService = azure.createQueueService(
-    nconf.get("STORAGE_ACCOUNT"),
-    nconf.get("STORAGE_KEY")
-  );
+  console.log(nconf.argv().get('config'));
+  let configFile = nconf.argv().get('config');
+  let config = nconf.file({file:configFile, search:true});
 
-  tableService.createTableIfNotExists(TABLE_NAME, (err, result) => {
-    if (err) {
-      console.warn("createTable");
-      console.warn(err.stack);
-      process.exit(1);
-    }
+  let pipeline = [];
+  let pipelineSpec = config.get('pipeline');
+  for (let stage of pipelineSpec) {
+    pipeline.push(require('./lib/' + stage));
+  }
+  console.log(pipelineSpec);
 
-    queueService.createQueueIfNotExists(USERGRAPH_QUEUE_NAME, (err, result) => {
+  filter(
+    config,
+    (err, tweet) => {
       if (err) {
-        console.warn("create user graph queue");
         console.warn(err.stack);
         process.exit(1);
       }
-      queueService.createQueueIfNotExists(PIPELINE_QUEUE_NAME, (err, result) => {
-          if (err) {
-            console.warn("create user graph queue");
-            console.warn(err.stack);
-            process.exit(1);
-          }
-          var filterSpec = {};
-
-          var bbox = nconf.get("BOUNDING_BOX");
-          if (bbox) {
-            filterSpec.locations = bbox;
-          }
-
-          getKeywordList().then((keywords) => {
-
-            if (keywords.length > 400) {
-              console.warn("filter: >400 keywords, truncating");
-              keywords = keywords.slice(0, 399);
-            }
-
-            if (keywords) {
-              filterSpec.track = keywords.join(",");
-            }
-
-            filterSpec.language = "in";
-
-            console.log("== Filter Spec ==");
-            console.log(filterSpec);
-
-            filter(
-              filterSpec,
-              (err, tweet) => {
-                if (err) {
-                  console.warn("twitter");
-                  console.warn(err.stack);
-                  process.exit(1);
-                }
-                processTweet(tweet, tableService, queueService);
-              }
-            );
-
-          })
-          .catch((err) => {
-            console.log(err.stack);
-          });
-        })
-    })
-  });
+      processTweet(tweet, pipeline);
+    }
+  );
 }
 
 if (require.main === module) {
-    main();
+  main();
 }
