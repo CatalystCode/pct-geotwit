@@ -69,10 +69,7 @@ class Dedupe extends PipeStage {
 
       this.tableService.insertEntity(this.tableName, this._tablify(row), (err, result, resp) => {
         if (err) {
-          console.warn('inserting tweet');
-          console.warn(resp);
-          console.warn(err.stack);
-          resolve(null);
+          reject(err);
         }
         else {
           resolve(tweet);
