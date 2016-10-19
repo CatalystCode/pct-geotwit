@@ -8,7 +8,6 @@ class Dedupe extends PipeStage {
   constructor(config) {
     super(config);
 
-    console.log(config.get());
     this.tableService = azure.createTableService(
       config.get('table_storage_account'),
       config.get('table_storage_key')
@@ -73,7 +72,7 @@ class Dedupe extends PipeStage {
           console.warn('inserting tweet');
           console.warn(resp);
           console.warn(err.stack);
-          reject(err);
+          resolve(null);
         }
         else {
           resolve(tweet);

@@ -7,7 +7,6 @@ var twitter = require('twitter');
 function filter(config, cb) {
 
   config.required(['tweet_filter']);
-  console.log(config.get());
 
   var client = new twitter({
     consumer_key: config.get('twitter_consumer_key'),
@@ -34,7 +33,7 @@ function processTweet(tweet, pipeline) {
   if (tweet.limit) {
     // We're being told we're matching more than our limit allows
     // Nothing to be done unless we want to partner with Twitter
-    console.log(tweet);
+    console.warn(tweet);
     return;
   }
 
@@ -50,7 +49,7 @@ function processTweet(tweet, pipeline) {
 
   if (head != null) {
     head.catch((e) => {
-      console.log(e.stack);
+      console.warn(e.stack);
     });
   }
 }

@@ -1,8 +1,8 @@
 'use strict';
 
-let azure = require("azure");
 let nconf = require("nconf");
 let geolib = require("geolib");
+let azure = require("azure-storage");
 
 function random(low, high) {
   return Math.random() * (high - low) + low;
@@ -77,7 +77,7 @@ function updateRepliedBy(config, tableService, userId, repliedBy) {
 
     if (!(repliedBy in user.replied_by)) {
       user.replied_by.push(repliedBy);
-      writeUser(tableService, user);
+      writeUser(config, tableService, user);
     }
   });
 }
@@ -196,6 +196,8 @@ function processMessage(config, tableService, queueService, msg, cb) {
 
   // Arbitrarily partition user table on first two digits of user id
 
+  msg = JSON.parse(msg);
+
   let userId = msg.user_id.toString();
   let partKey = userId.slice(0, 2);
   let userTable = config.get('user_table');
@@ -206,7 +208,7 @@ function processMessage(config, tableService, queueService, msg, cb) {
   tableService.queryEntities(userTable, tableQuery, null, (err, result) => {
 
     if (err) {
-      console.warn(err);
+      console.error(err);
       return;
     }
 
@@ -241,9 +243,9 @@ function processMessage(config, tableService, queueService, msg, cb) {
       if (!(msg.in_reply_to in user.replied_to)) {
         // If tweet replies to another user, add the edge from them to us
         update = true;
-        repliedTo = msg.in_reply_to.toString();
+        let repliedTo = msg.in_reply_to.toString();
         user.replied_to.push(repliedTo);
-        updateRepliedBy(tableService, repliedTo, userId);
+        updateRepliedBy(config, tableService, repliedTo, userId);
       }
     }
 
@@ -269,7 +271,7 @@ function processMessage(config, tableService, queueService, msg, cb) {
         user = condenseLocations(user);
         user = recalcLocation(user);
       }
-      writeUser(tableService, user, cb);
+      writeUser(config, tableService, user, cb);
     }
     else {
       cb(null, true);
@@ -277,13 +279,13 @@ function processMessage(config, tableService, queueService, msg, cb) {
   });
 }
 
-function onMessage(tableService, queueService, message) {
+function onMessage(config, tableService, queueService, message) {
   return new Promise((resolve, reject) => {
-    processMessage(tableService, queueService, JSON.parse(message.messagetext), (err, result) => {
+    processMessage(config, tableService, queueService, message.messageText, (err, result) => {
       if (err) {
         resolve([]);
       } else {
-        resolve([message.messageid, message.popreceipt]);
+        resolve([message.messageId, message.popReceipt]);
       }
     });
   });
@@ -292,11 +294,11 @@ function onMessage(tableService, queueService, message) {
 function pump(config, tableService, queueService) {
 
   let options = { numOfMessages:32 };
-  let userGraphQueue = config.get('usergraphqueue');
+  let userGraphQueue = config.get('usergraph_queue');
 
   queueService.getMessages(userGraphQueue, options, (err, result) => {
     if (!err) {
-      Promise.all(result.map((msg) => onMessage(tableService, queueService, msg)))
+      Promise.all(result.map((msg) => onMessage(config, tableService, queueService, msg)))
       .then((results) => {
         for (let result of results) {
           if (result.length > 0) {
@@ -305,8 +307,11 @@ function pump(config, tableService, queueService) {
           }
         }
         process.nextTick(() => {
-          pump(tableService, queueService);
+          pump(config, tableService, queueService);
         });
+      })
+      .catch((e) => {
+        console.error(e.stack);
       });
     }
     else {
@@ -318,10 +323,8 @@ function pump(config, tableService, queueService) {
 
 function main() {
 
-  nconf.defaults({config:'localConfig.json'});
-
-  console.log(nconf.argv().get('config'));
   let configFile = nconf.argv().get('config');
+  nconf.defaults({config:'localConfig.json'});
   let config = nconf.file({file:configFile, search:true});
 
   nconf.required(['table_storage_account', 'table_storage_key']);
@@ -334,14 +337,15 @@ function main() {
     config.get("table_storage_account"),
     config.get("table_storage_key")
   );
+  queueService.messageEncoder = null;
 
   nconf.required(['user_table']);
-  tableService.createTableIfNotExists(config.get('user_table', (err, result) => {
+  tableService.createTableIfNotExists(config.get('user_table'), (err, result) => {
     if (err) {
-      console.warn(err);
+      console.error(err);
       process.exit(1);
     }
-    pump(tableService, queueService);
+    pump(config, tableService, queueService);
   });
 }
 

@@ -12,6 +12,7 @@ module.exports = class Enqueue extends PipeStage {
       config.get('table_storage_account'),
       config.get('table_storage_key')
     );
+    this.queueService.messageEncoder = null
 
     // Child class expected to provide this
     this.queueName = null;
