@@ -8,9 +8,9 @@ module.exports = class Enqueue extends PipeStage {
   constructor(config) {
     super(config);
 
-    var queueService = azure.createQueueService(
-      config.get('queue_storage_account'),
-      config.get('queue_storage_key')
+    this.queueService = azure.createQueueService(
+      config.get('table_storage_account'),
+      config.get('table_storage_key')
     );
 
     // Child class expected to provide this
@@ -18,8 +18,8 @@ module.exports = class Enqueue extends PipeStage {
   }
 
   init() {
-    return Promise((resolve, reject) => {
-      queueService.createQueueIfNotExists(this.queueName, (err, result) => {
+    return new Promise((resolve, reject) => {
+      this.queueService.createQueueIfNotExists(this.queueName, (err, result) => {
         if (err) {
           console.warn('create user graph queue');
           console.warn(err.stack);
@@ -30,15 +30,19 @@ module.exports = class Enqueue extends PipeStage {
     });
   }
 
-  process(tweet, cb) {
-    let msg = JSON.stringify(tweet);
-    queueService.createMessage(this.queueName, msg, (err, result) => {
-      if (err) {
-        console.warn('queueing tweet to: ' + this.queueName);
-        console.warn(err.stack);
-        cb(null);
-      }
-      cb(tweet);
+  process(tweet) {
+    return new Promise((resolve, reject) => {
+      let msg = JSON.stringify(tweet);
+      this.queueService.createMessage(this.queueName, msg, (err, result) => {
+        if (err) {
+          console.warn('queueing tweet to: ' + this.queueName);
+          console.warn(err.stack);
+          reject(err);
+        }
+        else {
+          resolve(tweet);
+        }
+      });
     });
   }
 }

@@ -8,6 +8,7 @@ class Dedupe extends PipeStage {
   constructor(config) {
     super(config);
 
+    console.log(config.get());
     this.tableService = azure.createTableService(
       config.get('table_storage_account'),
       config.get('table_storage_key')
@@ -18,7 +19,7 @@ class Dedupe extends PipeStage {
 
   init() {
     return new Promise((resolve, reject) => {
-      this.tableService.createTableIfNotExists(TABLE_NAME, (err, result) => {
+      this.tableService.createTableIfNotExists(this.tableName, (err, result) => {
         if (err) {
           console.warn('createTable');
           console.warn(err.stack);
@@ -33,7 +34,7 @@ class Dedupe extends PipeStage {
     // Given an object, return a Table row
     var t = {};
     for (var k in o) {
-      t[k] = { _ : t[k] }
+      t[k] = { _ : o[k] }
     }
 
     return t
@@ -50,7 +51,7 @@ class Dedupe extends PipeStage {
     return o;
   }
 
-  process(tweet, cb) {
+  process(tweet) {
 
     return new Promise((resolve, reject) => {
 
@@ -67,17 +68,20 @@ class Dedupe extends PipeStage {
         'geo' : JSON.stringify(tweet.geo)
       };
 
-      tableService.insertEntity(this.tableName, _tablify(row), (err, result, response) => {
+      this.tableService.insertEntity(this.tableName, this._tablify(row), (err, result, resp) => {
         if (err) {
           console.warn('inserting tweet');
-          console.warn(response);
+          console.warn(resp);
           console.warn(err.stack);
           reject(err);
         }
-
-        resolve(tweet);
+        else {
+          resolve(tweet);
+        }
       });
 
     });
   }
 }
+
+module.exports = Dedupe;

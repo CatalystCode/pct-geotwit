@@ -31,24 +31,6 @@ function filter(config, cb) {
 
 function processTweet(tweet, pipeline) {
 
-  console.log(tweet);
-
-  /* Hmm.. batching often errors with 'one of the inputs is invalid'
-     that we don't see when we just hammer the Table.
-
-  function sendBatch(batch, retries) {
-    tableService.executeBatch('tweets', batch, function(error, result) {
-      if (error) {
-        if (retries > 0) {
-          console.log('retrying : ' + error);
-          setTimeout(() => { sendBatch(batch, --retries); }, 10000);
-        } else {
-          console.log('inserting tweet: ' + error);
-        }
-      }
-    });
-  }*/
-
   if (tweet.limit) {
     // We're being told we're matching more than our limit allows
     // Nothing to be done unless we want to partner with Twitter
@@ -56,42 +38,21 @@ function processTweet(tweet, pipeline) {
     return;
   }
 
-  //ingestTweet(tweet);
-}
-
-function ingestTweet(tweet){
-  // we use moment.js to parse the 'strange'' Twitter dateTime format
-  var iso_8601_created_at = moment(tweet.created_at, 'dd MMM DD HH:mm:ss ZZ YYYY', 'en');
-
-  var tweetEssentials = {
-    created_at:  iso_8601_created_at,
-    id: tweet.id,
-    geo: tweet.geo,
-    lang: tweet.lang,
-    source: tweet.source,
-    text: tweet.text,
-    user_id: tweet.user.id,
-    user_followers_count: tweet.user.followers_count,
-    user_friends_count: tweet.user.friends_count,
-    user_name: tweet.user.name,
-  };
-
-  var message = {
-    source: 'twitter',
-    created_at: iso_8601_created_at,
-    message: tweetEssentials
+  var head = null;
+  for (let stage of pipeline) {
+    if (!head) {
+      head = stage.process(tweet);
+    }
+    else {
+      head.then(stage.process(tweet));
+    }
   }
 
-  queueService.createMessage(
-    PIPELINE_QUEUE_NAME, 
-    JSON.stringify(message), 
-    function(err, result, response) {
-      if (err) {
-        console.log('error: ' + err);
-      }
-      console.log('success');
-    }
-  );
+  if (head != null) {
+    head.catch((e) => {
+      console.log(e.stack);
+    });
+  }
 }
 
 function main() {
@@ -105,20 +66,28 @@ function main() {
   let pipeline = [];
   let pipelineSpec = config.get('pipeline');
   for (let stage of pipelineSpec) {
-    pipeline.push(require('./lib/' + stage));
+    let cls = require('./lib/' + stage);
+    pipeline.push(new cls(config));
   }
-  console.log(pipelineSpec);
 
-  filter(
-    config,
-    (err, tweet) => {
-      if (err) {
-        console.warn(err.stack);
-        process.exit(1);
+  let promises = [];
+  for (let stage of pipeline) {
+    promises.push(stage.init());
+  }
+
+  Promise.all(promises)
+  .then((values) => {
+    filter(
+      config,
+      (err, tweet) => {
+        if (err) {
+          console.warn(err.stack);
+          process.exit(1);
+        }
+        processTweet(tweet, pipeline);
       }
-      processTweet(tweet, pipeline);
-    }
-  );
+    );
+  });
 }
 
 if (require.main === module) {
