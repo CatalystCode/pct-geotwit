@@ -57,10 +57,9 @@ function processTweet(tweet, pipeline) {
 
 function main() {
 
-  nconf.defaults({config:'localConfig.json'});
+  nconf.env().argv().defaults({config:'localConfig.json'});
 
-  console.log(nconf.argv().get('config'));
-  let configFile = nconf.argv().get('config');
+  let configFile = nconf.get('config');
   let config = nconf.file({file:configFile, search:true});
 
   let pipeline = [];

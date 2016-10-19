@@ -1,23 +1,21 @@
-var azure = require("azure");
-var nconf = require("nconf");
-var geolib = require("geolib");
+'use strict';
 
-var config = nconf.env().file({ file: '../../localConfig.json' });
-var USER_TABLE = config.get("USER_TABLE");
-var QUEUE = config.get("TWEET_USERGRAPH_QUEUE_NAME");
+let azure = require("azure");
+let nconf = require("nconf");
+let geolib = require("geolib");
 
 function random(low, high) {
   return Math.random() * (high - low) + low;
 }
 
-function writeUser(tableService, user, cb) {
+function writeUser(config, tableService, user, cb) {
 
   function add(r, k, v) {
     r[k] = { _ : v };
   }
 
-  var row = {};
-  for (var k in user) {
+  let row = {};
+  for (let k in user) {
     if (typeof(user[k]) == 'object') {
       add(row, k, JSON.stringify(user[k]));
     }
@@ -26,14 +24,14 @@ function writeUser(tableService, user, cb) {
     }
   }
 
-  tableService.insertOrMergeEntity(USER_TABLE, row, (err, result) => {
+  tableService.insertOrMergeEntity(config.get('user_table'), row, (err, result) => {
     if (cb) {
       cb(err, result);
     }
   });
 }
 
-function updateRepliedBy(tableService, userId, repliedBy) {
+function updateRepliedBy(config, tableService, userId, repliedBy) {
 
   /*
    * Add repliedBy to userId's list of users that have ever replied to
@@ -41,17 +39,18 @@ function updateRepliedBy(tableService, userId, repliedBy) {
    * we'll ultimately use to infer location
    */
 
-  var partKey = userId.slice(0, 2);
+  let userTable = config.get('user_table');
+  let partKey = userId.slice(0, 2);
 
-  var user = {
+  let user = {
     PartitionKey : partKey,
     RowKey : userId
   };
 
-  var tableQuery = new azure.TableQuery().select("replied_by").where("PartitionKey == ?", partKey)
+  let tableQuery = new azure.TableQuery().select("replied_by").where("PartitionKey == ?", partKey)
   .and("RowKey == ?", userId);
 
-  tableService.queryEntities(USER_TABLE, tableQuery, null, (err, result) => {
+  tableService.queryEntities(userTable, tableQuery, null, (err, result) => {
 
     if (err) {
       console.warn("updateRepliedBy");
@@ -71,7 +70,7 @@ function updateRepliedBy(tableService, userId, repliedBy) {
       }
       else {
         // Existing user
-        var entry = result.entries[0];
+        let entry = result.entries[0];
         user.replied_by = JSON.parse(entry.replied_by._);
       }
     }
@@ -85,13 +84,13 @@ function updateRepliedBy(tableService, userId, repliedBy) {
 
 function condenseLocations(user) {
 
-  var geos = {};
-  var places = {};
+  let geos = {};
+  let places = {};
 
-  for (var location of user.locations) {
+  for (let location of user.locations) {
     if ("place" in location) {
 
-      var place = location.place;
+      let place = location.place;
       if (!("occurrences" in place)) {
         place.occurrences = 1;
       }
@@ -105,7 +104,7 @@ function condenseLocations(user) {
     }
     else if ("geo" in location) {
 
-      var geo = location.geo;
+      let geo = location.geo;
       if (!("occurrences" in geo)) {
         geo.occurrences = 1;
       }
@@ -120,11 +119,11 @@ function condenseLocations(user) {
   }
 
   user.locations = [];
-  for (var place in places) {
+  for (let place in places) {
     user.locations.push({ "place" : places[place] });
   }
 
-  for (var geo in geos) {
+  for (let geo in geos) {
     user.locations.push({ "geo" : geos[geo] });
   }
 
@@ -134,18 +133,18 @@ function condenseLocations(user) {
 
 function recalcLocation(user) {
 
-  var latlons = [];
+  let latlons = [];
 
-  for (var location of user.locations) {
+  for (let location of user.locations) {
 
     if ("place" in location) {
 
       // Place is a bounding box, put the user in the centre of that
 
-      var place = location.place;
+      let place = location.place;
       if (place.bounding_box.type == "Polygon") {
-        var coords = place.bounding_box.coordinates[0];
-        var bbox = [
+        let coords = place.bounding_box.coordinates[0];
+        let bbox = [
           { longitude:coords[0][0], latitude:coords[0][1] },
           { longitude:coords[1][0], latitude:coords[1][1] },
           { longitude:coords[2][0], latitude:coords[2][1] },
@@ -159,7 +158,7 @@ function recalcLocation(user) {
       }
     }
     else if ("geo" in location) {
-      var geo = location.geo;
+      let geo = location.geo;
       if (geo["type"] == "Point") {
         latlons.push({latitude:geo.coordinates[0], longitude:geo.coordinates[1]});
       }
@@ -172,11 +171,11 @@ function recalcLocation(user) {
 
   // Put the user at the centre of all the latlons they've ever reported.
   // Note: We could improve accuracy by rejecting outliers and/or weighting
-  // for frequency but the statistical method for doing that (l1 mulivariate median)
+  // for frequency but the statistical method for doing that (l1 muliletiate median)
   // is not easily available in Node (yet)
 
   if (latlons.length > 0) {
-    var loc = geolib.getCenter(latlons);
+    let loc = geolib.getCenter(latlons);
     user.location = {
       latitude : loc.latitude,
       longitude : loc.longitude,
@@ -187,7 +186,7 @@ function recalcLocation(user) {
   return user;
 }
 
-function processMessage(tableService, queueService, msg, cb) {
+function processMessage(config, tableService, queueService, msg, cb) {
 
   /* Process an individual tweet. We're interested in tweets that are geotagged
    * or are in reply to to someone. geotagged tweets end up being the fixed
@@ -196,23 +195,25 @@ function processMessage(tableService, queueService, msg, cb) {
    */
 
   // Arbitrarily partition user table on first two digits of user id
-  var userId = msg.user_id.toString();
-  var partKey = userId.slice(0, 2);
 
-  var tableQuery = new azure.TableQuery().where("PartitionKey == ?", partKey)
+  let userId = msg.user_id.toString();
+  let partKey = userId.slice(0, 2);
+  let userTable = config.get('user_table');
+
+  let tableQuery = new azure.TableQuery().where("PartitionKey == ?", partKey)
   .and("RowKey == ?", userId);
 
-  tableService.queryEntities(USER_TABLE, tableQuery, null, (err, result) => {
+  tableService.queryEntities(userTable, tableQuery, null, (err, result) => {
 
     if (err) {
       console.warn(err);
       return;
     }
 
-    var update = false;
-    var locationUpdate = false;
+    let update = false;
+    let locationUpdate = false;
 
-    var user = {
+    let user = {
       PartitionKey : partKey,
       RowKey : userId
     };
@@ -231,7 +232,7 @@ function processMessage(tableService, queueService, msg, cb) {
     }
     else {
       // Existing user
-      var entry = result.entries[0];
+      let entry = result.entries[0];
       user.locations = JSON.parse(entry.locations._);
       user.replied_to = JSON.parse(entry.replied_to._);
     }
@@ -259,7 +260,6 @@ function processMessage(tableService, queueService, msg, cb) {
     if ("place" in msg && msg.place != 'null') {
       update = true;
       locationUpdate = true;
-
       user.locations.push({"place":JSON.parse(msg.place)});
     }
 
@@ -289,16 +289,18 @@ function onMessage(tableService, queueService, message) {
   });
 }
 
-function pump(tableService, queueService) {
+function pump(config, tableService, queueService) {
 
-  var options = { numOfMessages:32 };
-  queueService.getMessages(QUEUE, options, (err, result) => {
+  let options = { numOfMessages:32 };
+  let userGraphQueue = config.get('usergraphqueue');
+
+  queueService.getMessages(userGraphQueue, options, (err, result) => {
     if (!err) {
       Promise.all(result.map((msg) => onMessage(tableService, queueService, msg)))
       .then((results) => {
-        for (var result of results) {
+        for (let result of results) {
           if (result.length > 0) {
-            queueService.deleteMessage(QUEUE, result[0], result[1], (err, result) => {
+            queueService.deleteMessage(userGraphQueue, result[0], result[1], (err, result) => {
             });
           }
         }
@@ -316,25 +318,29 @@ function pump(tableService, queueService) {
 
 function main() {
 
-  // Add a timestamp that the Azure DataFactory can actually read
+  nconf.defaults({config:'localConfig.json'});
 
-  var tableService = azure.createTableService(
-    config.get("STORAGE_ACCOUNT"),
-    config.get("STORAGE_KEY")
+  console.log(nconf.argv().get('config'));
+  let configFile = nconf.argv().get('config');
+  let config = nconf.file({file:configFile, search:true});
+
+  nconf.required(['table_storage_account', 'table_storage_key']);
+  let tableService = azure.createTableService(
+    config.get("table_storage_account"),
+    config.get("table_storage_key")
   );
 
-  var queueService = azure.createQueueService(
-    config.get("STORAGE_ACCOUNT"),
-    config.get("STORAGE_KEY")
+  let queueService = azure.createQueueService(
+    config.get("table_storage_account"),
+    config.get("table_storage_key")
   );
 
-  tableService.createTableIfNotExists(USER_TABLE, (err, result) => {
-
+  nconf.required(['user_table']);
+  tableService.createTableIfNotExists(config.get('user_table', (err, result) => {
     if (err) {
       console.warn(err);
       process.exit(1);
     }
-
     pump(tableService, queueService);
   });
 }
