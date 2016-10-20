@@ -3,7 +3,7 @@
 var azure = require('azure-storage');
 var PipeStage = require('./pipe_stage.js');
 
-module.exports = class Enqueue extends PipeStage {
+class Enqueue extends PipeStage {
 
   constructor(config) {
     super(config);
@@ -36,8 +36,6 @@ module.exports = class Enqueue extends PipeStage {
       let msg = JSON.stringify(tweet);
       this.queueService.createMessage(this.queueName, msg, (err, result) => {
         if (err) {
-          console.warn('queueing tweet to: ' + this.queueName);
-          console.warn(err.stack);
           reject(err);
         }
         else {
@@ -48,4 +46,4 @@ module.exports = class Enqueue extends PipeStage {
   }
 }
 
-
+module.exports = Enqueue;

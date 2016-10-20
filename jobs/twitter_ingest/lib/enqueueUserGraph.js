@@ -9,18 +9,16 @@ class EnqueueUserGraph extends EnqueueStage {
   }
 
   process(tweet) {
-    return new Promise((resolve, reject) => {
-      let row = {
-        'user_id' : tweet.user.id,
-        'user_screen_name' : tweet.user.screen_name,
-        'timestamp' : tweet.timestamp_ms,
-        'lang' : tweet.lang,
-        'in_reply_to' : tweet.in_reply_to_user_id,
-        'place' : JSON.stringify(tweet.place),
-        'geo' : JSON.stringify(tweet.geo)
-      };
-      super.process(row);
-    });
+    let row = {
+      'user_id' : tweet.user.id,
+      'user_screen_name' : tweet.user.screen_name,
+      'timestamp' : tweet.timestamp_ms,
+      'lang' : tweet.lang,
+      'in_reply_to' : tweet.in_reply_to_user_id,
+      'place' : JSON.stringify(tweet.place),
+      'geo' : JSON.stringify(tweet.geo)
+    };
+    return super.process(row);
   }
 }
 

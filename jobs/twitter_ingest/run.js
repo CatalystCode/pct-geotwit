@@ -4,6 +4,21 @@ var fs = require('fs');
 var nconf = require('nconf');
 var twitter = require('twitter');
 
+function processTweet(tweet, pipeline) {
+
+  if (tweet.limit) {
+    // We're being told we're matching more than our limit allows
+    // Nothing to be done unless we want to partner with Twitter
+    // console.warn(tweet);
+    return;
+  }
+
+  let first = Promise.resolve(tweet);
+  return pipeline.reduce(function(result, cls) {
+    return result = result.then(cls.process.bind(cls));
+  }, first);
+}
+
 function filter(config, cb) {
 
   config.required(['tweet_filter']);
@@ -19,39 +34,23 @@ function filter(config, cb) {
     '/statuses/filter', config.get('tweet_filter'),
     function(stream) {
       stream.on('error', function(err) {
-        cb(err, null);
+        console.error('stream error');
+        console.log(err);
+        cb('error', null);
       });
       stream.on('data', function(tweets) {
         cb(null, tweets);
       });
+      stream.on('end', (err) => {
+        console.error('twitter stream ended');
+        cb('end', null);
+      });
+      stream.on('destroy', (err) => {
+        console.error('twitter stream destroyed');
+        cb(err, null);
+      });
     }
   );
-}
-
-function processTweet(tweet, pipeline) {
-
-  if (tweet.limit) {
-    // We're being told we're matching more than our limit allows
-    // Nothing to be done unless we want to partner with Twitter
-    console.warn(tweet);
-    return;
-  }
-
-  var head = null;
-  for (let stage of pipeline) {
-    if (!head) {
-      head = stage.process(tweet);
-    }
-    else {
-      head.then(stage.process(tweet));
-    }
-  }
-
-  if (head != null) {
-    head.catch((e) => {
-      console.warn(e.stack);
-    });
-  }
 }
 
 function main() {
@@ -68,23 +67,34 @@ function main() {
     pipeline.push(new cls(config));
   }
 
-  let promises = [];
+  let inits = [];
   for (let stage of pipeline) {
-    promises.push(stage.init());
+    inits.push(stage.init());
   }
 
-  Promise.all(promises)
-  .then((values) => {
-    filter(
-      config,
-      (err, tweet) => {
-        if (err) {
-          console.warn(err.stack);
-          process.exit(1);
-        }
-        processTweet(tweet, pipeline);
+  process.on('exit', () => {
+    console.log('exiting');
+  });
+
+  function filterCallback(err, tweet) {
+    if (err) {
+      console.warn('Error from streaming api...');
+      if (err === 'end') {
+        console.log('Retrying...');
+        setInterval(() => {
+          filter(config, filterCallback); 
+        }, 5000);
       }
-    );
+    }
+    else {
+      processTweet(tweet, pipeline);
+    }
+  }
+
+  Promise.all(inits)
+  .then(() => {
+    console.log('Starting...');
+    filter(config, filterCallback);
   });
 }
 
