@@ -323,8 +323,9 @@ function pump(config, tableService, queueService) {
 
 function main() {
 
-  let configFile = nconf.argv().get('config');
-  nconf.defaults({config:'localConfig.json'});
+  nconf.env().argv().defaults({config:'localConfig.json'});
+
+  let configFile = nconf.get('config');
   let config = nconf.file({file:configFile, search:true});
 
   nconf.required(['table_storage_account', 'table_storage_key']);
@@ -345,6 +346,7 @@ function main() {
       console.error(err);
       process.exit(1);
     }
+    console.log("Starting...");
     pump(config, tableService, queueService);
   });
 }
