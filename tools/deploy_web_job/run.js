@@ -94,6 +94,7 @@ function main(argv) {
     archive.file(path.join(packageDir, file), {name:file})
   }
   archive.directory(path.join(packageDir, "node_modules"), "node_modules")
+  archive.directory(path.join(packageDir, "lib"), "lib")
   archive.finalize()
 }
 

@@ -9,13 +9,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "azure": "^0.10.6",
+    "azure-storage": "^1.3.1",
+    "colors": "^1.1.2",
     "geolib": "^2.0.21",
-    "nconf": "^0.8.4",
-    "azure-storage-tools" : "file:../../pct-webjobtemplate/lib/azure-storage-tools"
+    "nconf": "^0.8.4"
   },
   "files": [
     "./run.js",
-    "settings.job"
+    "settings.job",
+    "localConfig.json"
   ]
 }

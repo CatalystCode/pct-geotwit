@@ -1,18 +1,62 @@
-var azure = require("azure");
-var nconf = require("nconf");
-var geolib = require("geolib");
-var table = require("azure-storage-tools").table;
+let nconf = require("nconf");
+let colors = require("colors");
+let geolib = require("geolib");
+let azure = require("azure-storage");
 
 require("https").globalAgent.maxSockets = 128;
 
-var config = nconf.env().file({ file: '../../localConfig.json' });
-var TABLE = config.get("USER_TABLE");
+let _debug = true;
 
-var processed = 0;
-var inferences = 0;
+function detablify(t) {
+  var o = {};
+  for (var k in t) {
+    if (k[0] != '.') {
+      o[k] = t[k]._;
+    }
+  }
+  return o;
+}
 
-function writeFinalLocation(tableService, user, location, confidence, cb) {
-  var mergeUser = {
+function tablify(o) {
+
+  function add(r, k, v) {
+    r[k] = { _ : v };
+  }
+
+  var row = {};
+  for (var k in o) {
+    if (typeof(o[k]) == 'object') {
+      add(row, k, JSON.stringify(o[k]));
+    }
+    else {
+      add(row, k, o[k]);
+    }
+  }
+
+  return row;
+}
+
+function logError(name, err) {
+  console.error(name.bgRed);
+  console.error(err.stack);
+}
+
+function timerStart(name) {
+  console.time(name);
+}
+
+function timerEnd(name) {
+  console.timeEnd(name);
+}
+
+function debug(msg) {
+  if (msg) {
+    console.log(msg);
+  }
+}
+ 
+function writeFinalLocation(config, tableService, user, location, confidence, cb) {
+  let mergeUser = {
     PartitionKey : { "_" : user.PartitionKey },
     RowKey : { "_" : user.RowKey },
     location : {"_" : JSON.stringify({
@@ -22,21 +66,21 @@ function writeFinalLocation(tableService, user, location, confidence, cb) {
     })}
   };
 
-  tableService.mergeEntity(TABLE, mergeUser, (err, result) => {
+  tableService.mergeEntity(config.get('user_table'), mergeUser, (err, result) => {
     if (cb)
       cb(err, result);
   });
 }
 
-function clearInferredLocation(tableService, user, cb) {
+function clearInferredLocation(config, tableService, user, cb) {
 
-  var mergeUser = {
+  let mergeUser = {
     PartitionKey : { "_" : user.PartitionKey },
     RowKey : { "_" : user.RowKey },
     inferred_location : { "_" : JSON.stringify([]) }
   };
 
-  tableService.mergeEntity(TABLE, mergeUser, (err, result) => {
+  tableService.mergeEntity(config.get('user_table'), mergeUser, (err, result) => {
     if (!err) {
     }
     if (cb)
@@ -44,9 +88,9 @@ function clearInferredLocation(tableService, user, cb) {
   });
 }
 
-function writeInferredLocation(tableService, user, location, iteration, cb) {
+function writeInferredLocation(config, tableService, user, location, iteration, cb) {
 
-  var inferred_location;
+  let inferred_location;
   if (iteration == 1) {
     inferred_location = [];
   }
@@ -64,20 +108,14 @@ function writeInferredLocation(tableService, user, location, iteration, cb) {
     longitude : location.longitude
   });
 
-  var mergeUser = {
+  let mergeUser = {
     PartitionKey : { "_" : user.PartitionKey },
     RowKey : { "_" : user.RowKey },
     inferred_location : { "_" : JSON.stringify(inferred_location) }
   };
 
-  tableService.mergeEntity(TABLE, mergeUser, (err, result) => {
-    if (!err) {
-      if (inferred_location.length == 1) {
-        inferences++;
-      }
-    }
-    if (cb)
-      cb(err, result);
+  tableService.mergeEntity(config.get('user_table'), mergeUser, (err, result) => {
+    cb(err, result);
   });
 }
 
@@ -92,25 +130,25 @@ function retryOrResolve(resolve, fn) {
   });
 }
 
-function getNeighboursLocations(tableService, user) {
+function getNeighboursLocations(config, tableService, user) {
 
-  var repliedTo = JSON.parse(user.replied_to);
-  var repliedBy = JSON.parse(user.replied_by);
+  let repliedTo = JSON.parse(user.replied_to);
+  let repliedBy = JSON.parse(user.replied_by);
 
-  var neighbours = new Set(repliedTo.concat(repliedBy));
+  let neighbours = new Set(repliedTo.concat(repliedBy));
 
-  var all = [];
-  for (var neighbour of neighbours) {
+  let all = [];
+  for (let neighbour of neighbours) {
 
     all.push(new Promise((resolve, reject) => {
-      var partKey = neighbour.slice(0, 2);
-      var rowKey = neighbour;
+      let partKey = neighbour.slice(0, 2);
+      let rowKey = neighbour;
 
-      var query = new azure.TableQuery().select(["location", "inferred_location"])
+      let query = new azure.TableQuery().select(["location", "inferred_location"])
       .where("PartitionKey == ?", partKey).and("RowKey == ?", neighbour);
 
       retryOrResolve(resolve, (cb) => {
-        tableService.queryEntities(TABLE, query, null, cb);
+        tableService.queryEntities(config.get('user_table'), query, null, cb);
       });
     }));
   }
@@ -118,26 +156,25 @@ function getNeighboursLocations(tableService, user) {
   return Promise.all(all);
 }
 
-function processUser(tableService, user, iteration) {
-
-  processed++;
+function processUser(config, tableService, user, iteration, stats) {
 
   return new Promise((resolve, reject) => {
 
-    var locations = JSON.parse(user.locations);
+    stats.users++;
+    let locations = JSON.parse(user.locations);
     if (locations.length > 0) {
       resolve(true);
     }
     else {
       // User has never reported a location, infer one
       // from any neighbours
-      getNeighboursLocations(tableService, user)
+      getNeighboursLocations(config, tableService, user)
       .then((results) => {
-        var latlons = [];
+        let latlons = [];
         if (results.length > 0) {
-          for (var result of results) {
+          for (let result of results) {
             if (result && result.entries.length > 0) {
-              var loc;
+              let loc;
               if (iteration == 1) {
                 // First iteration, we only average over known locations
                 // (confidence == 1)
@@ -147,7 +184,7 @@ function processUser(tableService, user, iteration) {
                 }
               }
               else {
-                var inferred_locations = JSON.parse(result.entries[0].inferred_location._);
+                let inferred_locations = JSON.parse(result.entries[0].inferred_location._);
                 if (inferred_locations && inferred_locations.length > 0) {
                   loc = inferred_locations[inferred_locations.length - 1];
                 }
@@ -157,7 +194,9 @@ function processUser(tableService, user, iteration) {
               }
 
               if (loc) {
-                latlons.push({latitude:loc.latitude, longitude:loc.longitude});
+                if (loc.latitude !== undefined && loc.longitude !== undefined) {
+                  latlons.push({latitude:loc.latitude, longitude:loc.longitude});
+                }
               }
             }
           }
@@ -165,23 +204,25 @@ function processUser(tableService, user, iteration) {
         return latlons;
       })
       .then((latlons) => {
+
         if (latlons.length > 0) {
-          var centrePoint = geolib.getCenter(latlons);
+          let centrePoint = geolib.getCenter(latlons);
           if (iteration < 5) {
             retryOrResolve(resolve, (cb) => {
-              writeInferredLocation(tableService, user, centrePoint, iteration, cb);
+              stats.inferredLocations++;
+              writeInferredLocation(config, tableService, user, centrePoint, iteration, cb);
             });
           }
           else {
             retryOrResolve(resolve, (cb) => {
-              writeFinalLocation(tableService, user, centrePoint, 0.5, cb);
+              writeFinalLocation(config, tableService, user, centrePoint, 0.5, cb);
             });
           }
         }
         else {
           if (iteration == 1) {
             retryOrResolve(resolve, (cb) => {
-              clearInferredLocation(tableService, user, cb);
+              clearInferredLocation(config, tableService, user, cb);
             });
           }
           else {
@@ -190,37 +231,43 @@ function processUser(tableService, user, iteration) {
         }
       })
       .catch((err) => {
-        console.warn("processUser");
-        console.warn(err.stack);
+        logError("processUser", err);
         setTimeout(() => {
-         processUser(tableService, user, iteration);
+         processUser(config, tableService, user, iteration);
         }, 5000);
       });
     }
   });
 }
 
-function processPartition(tableService, partition, iteration, cb) {
+function processPartition(config, tableService, partition, iteration, cb) {
 
-  var query = new azure.TableQuery().where("PartitionKey == ?", partition);
+  let stats = {
+    users : 0,
+    absoluteLocations : 0,
+    inferredLocations : 0
+  };
+
+  let query = new azure.TableQuery().where("PartitionKey == ?", partition.toString());
 
   function processBatch(tableService, entries) {
-    var all = [];
-    for (var entry of entries) {
-      var user = table.detablify(entry);
-      all.push(processUser(tableService, user, iteration));
+    let all = [];
+    for (let entry of entries) {
+      let user = detablify(entry);
+      all.push(processUser(config, tableService, user, iteration, stats));
     }
     return Promise.all(all);
   }
 
-  function nextBatch(continuationToken) {
-    tableService.queryEntities(TABLE, query, continuationToken, (err, result) => {
+  // Fetch the next batch of entries
+  function nextBatch(contToken) {
+
+    tableService.queryEntities(config.get('user_table'), query, contToken, (err, result) => {
 
       if (err) {
-        console.warn("processPartition");
-        console.warn(err.stack);
+        logError("processPartition", err);
         setTimeout(() => {
-          nextBatch(continuationToken);
+          nextBatch(contToken);
         }, 5000);
         return;
       }
@@ -228,17 +275,18 @@ function processPartition(tableService, partition, iteration, cb) {
       processBatch(tableService, result.entries)
       .then((results) => {
         if (result.continuationToken) {
+          // If there are more entries, go round again
           process.nextTick(() => {
             nextBatch(result.continuationToken);
           });
         }
         else {
-          cb();
+          // Finished processing a partition
+          cb(stats);
         }
       })
       .catch((err) => {
-        console.log("processBatch");
-        console.warn(err.stack);
+        logError("processBatch", err);
       });
     });
   };
@@ -246,68 +294,62 @@ function processPartition(tableService, partition, iteration, cb) {
   nextBatch(null);
 }
 
+function pumpCommandQueue(config, tableService, queueService) {
+
+  let commandQueue = config.get('command_queue');
+
+  queueService.getMessages(commandQueue, (err, result, response) => {
+
+    debug(err);
+
+    if (result.length > 0) { 
+
+      timerStart("processPartition");
+
+      let msg = result[0];
+      var message = JSON.parse(msg.messageText);
+      processPartition(config, tableService, message.partition, message.iteration, (stats) => {
+
+        timerEnd("processPartition");
+        debug("partition: " + message.partition + " iteration: " + message.iteration);
+        debug(JSON.stringify(stats));
+
+        tableService.mergeEntity(****);
+
+        queueService.deleteMessage(commandQueue, msg.messageId, msg.popReceipt, (err, result) => {
+          process.nextTick(() => {
+            pumpCommandQueue(config, tableService, queueService);
+          });
+        });
+      });
+    }
+  });
+}
+
 
 function main() {
 
-  // Add a timestamp that the Azure DataFactory can actually read
+  nconf.env().argv().defaults({config:'localConfig.json'});
 
-  var tableService = azure.createTableService(
-    config.get("STORAGE_ACCOUNT"),
-    config.get("STORAGE_KEY")
+  let configFile = nconf.get('config');
+  let config = nconf.file({file:configFile, search:true});
+
+  nconf.defaults({debug:_debug});
+  _debug = config.get('debug');
+  debug("debug mode");
+
+  nconf.required(['table_storage_account', 'table_storage_key']);
+  let tableService = azure.createTableService(
+    config.get("table_storage_account"),
+    config.get("table_storage_key")
   );
 
-  var queueService = azure.createQueueService(
-    config.get("STORAGE_ACCOUNT"),
-    config.get("STORAGE_KEY")
+  let queueService = azure.createQueueService(
+    config.get("table_storage_account"),
+    config.get("table_storage_key")
   );
 
-  function nextPartition(partition, iteration, cb) {
-    console.log("Partition: " + partition);
-    processPartition(tableService, partition, iteration, cb);
-  }
-
-  function nextIteration(iteration, cb) {
-
-    console.log("Iteration: " + iteration);
-
-    var partitions = [];
-    for (var partition = 10; partition < 100; partition++) {
-      partitions.push(partition.toString());
-    }
-
-    function onPartitionComplete() {
-      if (partitions.length > 0) {
-        nextPartition(partitions.shift(), iteration, onPartitionComplete);
-      }
-      else {
-        cb();
-      }
-    }
-
-    nextPartition(partitions.shift(), iteration, onPartitionComplete);
-  }
-
-  var iterations = [1, 2, 3, 4, 5];
-  function onIterationComplete() {
-
-    console.log("Processed:" + processed);
-    console.log("Inferences:" + inferences);
-
-    processed = 0;
-    inferences = 0;
-
-    if (iterations.length > 0) {
-      nextIteration(iterations.shift(), onIterationComplete);
-    }
-    else {
-      var end = Date.now();
-      console.log("done");
-      console.log(end - start + "ms");
-    }
-  }
-
-  var start = Date.now();
-  nextIteration(iterations.shift(), onIterationComplete);
+  pumpCommandQueue(config, tableService, queueService);
 }
 
 if (require.main === module) {
