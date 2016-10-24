@@ -294,6 +294,22 @@ function processPartition(config, tableService, partition, iteration, cb) {
   nextBatch(null);
 }
 
+function updateStatus(config, tableService, partition, iteration, status, cb) {
+  var row = {
+    PartitionKey : 'status',
+    RowKey : partition.toString(),
+    iteration : iteration.toString(),
+    status : status
+  };
+  tableService.insertOrReplaceEntity(
+    config.get('command_table'), tablify(row), (err, result, response) => {
+    if (err) {
+      debug(err);
+    }
+    cb(result);
+  });
+}
+
 function pumpCommandQueue(config, tableService, queueService) {
 
   let commandQueue = config.get('command_queue');
@@ -314,11 +330,12 @@ function pumpCommandQueue(config, tableService, queueService) {
         debug("partition: " + message.partition + " iteration: " + message.iteration);
         debug(JSON.stringify(stats));
 
-        tableService.mergeEntity(****);
-
-        queueService.deleteMessage(commandQueue, msg.messageId, msg.popReceipt, (err, result) => {
-          process.nextTick(() => {
-            pumpCommandQueue(config, tableService, queueService);
+        updateStatus(
+          config, tableService, message.partition, message.iteration, 'processed', (err) => {;
+          queueService.deleteMessage(commandQueue, msg.messageId, msg.popReceipt, (err, result) => {
+            process.nextTick(() => {
+              pumpCommandQueue(config, tableService, queueService);
+            });
           });
         });
       });
