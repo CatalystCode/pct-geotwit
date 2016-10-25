@@ -81,7 +81,7 @@ function main() {
       console.warn('Error from streaming api...');
       if (err === 'end') {
         console.log('Retrying...');
-        setInterval(() => {
+        setTimeout(() => {
           filter(config, filterCallback); 
         }, 5000);
       }
