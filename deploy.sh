@@ -2,7 +2,7 @@
 
 # ----------------------
 # KUDU Deployment Script
-# Version: 1.0.8
+# Version: 0.2.2
 # ----------------------
 
 # Helpers
@@ -43,11 +43,23 @@ if [[ ! -n "$NEXT_MANIFEST_PATH" ]]; then
   fi
 fi
 
+DEPLOYMENT_SOURCE_USER_GRAPH=$DEPLOYMENT_SOURCE\\jobs\\continuous\\build_user_graph
+DEPLOYMENT_SOURCE_TWITTER_INGEST=$DEPLOYMENT_SOURCE\\jobs\\continuous\\twitter_ingest
+DEPLOYMENT_SOURCE_INFER_LOCATION=$DEPLOYMENT_SOURCE\\jobs\\continuous\\infer_location
+
+
 if [[ ! -n "$DEPLOYMENT_TARGET" ]]; then
   DEPLOYMENT_TARGET=$ARTIFACTS/wwwroot
 else
   KUDU_SERVICE=true
 fi
+
+DEPLOYMENT_TARGET_WEBJOBS=$DEPLOYMENT_TARGET\\App_Data\\jobs
+
+echo "deploy directory is $DEPLOYMENT_TARGET_WEBJOBS"
+echo "deploy target is $DEPLOYMENT_TARGET"
+
+DEPLOYMENT_SOURCE_WEBJOBS=$DEPLOYMENT_SOURCE/jobs
 
 if [[ ! -n "$KUDU_SYNC_CMD" ]]; then
   # Install kudu sync
@@ -68,6 +80,7 @@ fi
 # ------------
 
 selectNodeVersion () {
+  echo Selecting Node Version
   if [[ -n "$KUDU_SELECT_NODE_VERSION_CMD" ]]; then
     SELECT_NODE_VERSION="$KUDU_SELECT_NODE_VERSION_CMD \"$DEPLOYMENT_SOURCE\" \"$DEPLOYMENT_TARGET\" \"$DEPLOYMENT_TEMP\""
     eval $SELECT_NODE_VERSION
@@ -77,8 +90,8 @@ selectNodeVersion () {
       NODE_EXE=`cat "$DEPLOYMENT_TEMP/__nodeVersion.tmp"`
       exitWithMessageOnError "getting node version failed"
     fi
-    
-    if [[ -e "$DEPLOYMENT_TEMP/__npmVersion.tmp" ]]; then
+
+    if [[ -e "$DEPLOYMENT_TEMP/.tmp" ]]; then
       NPM_JS_PATH=`cat "$DEPLOYMENT_TEMP/__npmVersion.tmp"`
       exitWithMessageOnError "getting npm version failed"
     fi
@@ -98,35 +111,54 @@ selectNodeVersion () {
 # Deployment
 # ----------
 
-echo Handling node.js deployment.
+echo Handling custom node.js deployment.
 
-# 1. KuduSync
-if [[ "$IN_PLACE_DEPLOYMENT" -ne "1" ]]; then
-  "$KUDU_SYNC_CMD" -v 50 -f "$DEPLOYMENT_SOURCE" -t "$DEPLOYMENT_TARGET" -n "$NEXT_MANIFEST_PATH" -p "$PREVIOUS_MANIFEST_PATH" -i ".git;.hg;.deployment;deploy.sh"
-  exitWithMessageOnError "Kudu Sync failed"
+touch server.js
+
+selectNodeVersion
+ 
+echo "deploy source is $DEPLOYMENT_SOURCE_USER_GRAPH"
+
+if [ -e "$DEPLOYMENT_SOURCE_USER_GRAPH\\package.json" ]; then
+  cd $DEPLOYMENT_SOURCE_USER_GRAPH
+  echo Installing NPM Packages
+  eval $NPM_CMD install
+  exitWithMessageOnError "npm failed"
+
+  cd - > /dev/null
 fi
 
-# 2. Select node version
-selectNodeVersion
+echo "deploy source is $DEPLOYMENT_SOURCE_TWITTER_INGEST"
+if [ -e "$DEPLOYMENT_SOURCE_TWITTER_INGEST\\package.json" ]; then
+  cd $DEPLOYMENT_SOURCE_TWITTER_INGEST
+  echo Installing NPM Packages
+  eval $NPM_CMD install
+  exitWithMessageOnError "npm failed"
 
+  cd - > /dev/null
+fi
+echo "deploy source is $DEPLOYMENT_SOURCE_INFER_LOCATION"
+if [ -e "$DEPLOYMENT_SOURCE_INFER_LOCATION\\package.json" ]; then
+  cd $DEPLOYMENT_SOURCE_INFER_LOCATION
+  echo Installing NPM Packages
+  eval $NPM_CMD install
+  exitWithMessageOnError "npm failed"
 
-# 3. Install npm packages in subdirectories
-echo "Installing npm packages in subdirectories"
-cd $DEPLOYMENT_TARGET/jobs/continuous/build_user_graph
-echo $dir
-eval $NPM_CMD install
-exitWithMessageOnError "npm install failed"
+  cd - > /dev/null
+fi
 
-cd $DEPLOYMENT_TARGET/jobs/continuous/twitter_ingest
-echo $dir
-eval $NPM_CMD install
-exitWithMessageOnError "npm install failed"
+echo Syncing Files to $DEPLOYMENT_TARGET_WEBJOBS
+"$KUDU_SYNC_CMD" -v 50 -f "$DEPLOYMENT_SOURCE_WEBJOBS" -t "$DEPLOYMENT_TARGET_WEBJOBS" -n "$NEXT_MANIFEST_PATH" -p "$PREVIOUS_MANIFEST_PATH" -i ".git;.hg;.deployment;deploy.sh"
+exitWithMessageOnError "Kudu Sync failed"
 
-cd $DEPLOYMENT_TARGET/jobs/triggered/infer_location
-echo $dir
-eval $NPM_CMD install
-exitWithMessageOnError "npm install failed"
-
+##################################################################################################################################
+# Post deployment stub
+if [[ -n "$POST_DEPLOYMENT_ACTION" ]]; then
+  POST_DEPLOYMENT_ACTION=${POST_DEPLOYMENT_ACTION//\"}
+  cd "${POST_DEPLOYMENT_ACTION_DIR%\\*}"
+  "$POST_DEPLOYMENT_ACTION"
+  exitWithMessageOnError "post deployment action failed"
+fi
 
 
 ##################################################################################################################################
