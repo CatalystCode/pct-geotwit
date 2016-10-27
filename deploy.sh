@@ -117,8 +117,8 @@ for dir in ./*
   do     
     cd $dir
     if [ -f "./package.json" ]
-      echo $dir
-      then 
+       then 
+        echo $dir
         eval $NPM_CMD install
         exitWithMessageOnError "npm install failed"
         cd $DEPLOYMENT_TARGET
