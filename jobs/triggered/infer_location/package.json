@@ -12,7 +12,7 @@
     "azure": "^0.10.6",
     "geolib": "^2.0.21",
     "nconf": "^0.8.4",
-    "azure-storage-tools" : "file:../../pct-webjobtemplate/lib/azure-storage-tools"
+    "azure-storage-tools" : "file:../../../pct-webjobtemplate/lib/azure-storage-tools"
   },
   "files": [
     "./run.js",
