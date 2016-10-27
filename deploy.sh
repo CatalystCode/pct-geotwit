@@ -117,7 +117,7 @@ echo Handling custom node.js deployment.
 touch server.js
 
 selectNodeVersion
-
+eval $NPM_CMD cache clean 
 echo "deploy source is $DEPLOYMENT_SOURCE_TEMPLATE"
 
 if [ -e "$DEPLOYMENT_SOURCE_TEMPLATE\\package.json" ]; then
