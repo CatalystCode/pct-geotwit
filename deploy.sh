@@ -112,18 +112,21 @@ selectNodeVersion
 
 # 3. Install npm packages in subdirectories
 echo "Installing npm packages in subdirectories"
-cd $DEPLOYMENT_TARGET
-for dir in ./*
-  do     
-    cd $dir
-    if [ -e "package.json" ]
-        echo $dir
-       then 
-        eval $NPM_CMD install
-        exitWithMessageOnError "npm install failed"
-        cd $DEPLOYMENT_TARGET
-      fi
-done
+cd $DEPLOYMENT_TARGET/jobs/continuous/build_user_graph
+echo $dir
+eval $NPM_CMD install
+exitWithMessageOnError "npm install failed"
+
+cd $DEPLOYMENT_TARGET/jobs/continuous/twitter_ingest
+echo $dir
+eval $NPM_CMD install
+exitWithMessageOnError "npm install failed"
+
+cd $DEPLOYMENT_TARGET/jobs/triggered/infer_location
+echo $dir
+eval $NPM_CMD install
+exitWithMessageOnError "npm install failed"
+
 
 
 ##################################################################################################################################
