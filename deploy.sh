@@ -46,7 +46,7 @@ fi
 DEPLOYMENT_SOURCE_USER_GRAPH=$DEPLOYMENT_SOURCE\\jobs\\continuous\\build_user_graph
 DEPLOYMENT_SOURCE_TWITTER_INGEST=$DEPLOYMENT_SOURCE\\jobs\\continuous\\twitter_ingest
 DEPLOYMENT_SOURCE_INFER_LOCATION=$DEPLOYMENT_SOURCE\\jobs\\continuous\\infer_location
-DEPLOYMENT_SOURCE_TEMPLATE=$DEPLOYMENT_SOURCE\\pct-webjobtemplate\lib\azure-storage-tools
+DEPLOYMENT_SOURCE_TEMPLATE=$DEPLOYMENT_SOURCE\\pct-webjobtemplate\\lib\\azure-storage-tools
 
 
 if [[ ! -n "$DEPLOYMENT_TARGET" ]]; then
