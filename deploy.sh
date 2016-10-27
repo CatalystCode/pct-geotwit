@@ -116,7 +116,7 @@ cd $DEPLOYMENT_TARGET
 for dir in ./*
   do     
     cd $dir
-    if [ -e "./package.json" ]
+    if [ -e "package.json" ]
         echo $dir
        then 
         eval $NPM_CMD install
