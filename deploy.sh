@@ -116,7 +116,7 @@ cd $DEPLOYMENT_TARGET
 for dir in ./*
   do     
     cd $dir
-    if [ -e "./package.json" ]
+    if [ -f "./package.json" ]
       echo $dir
       then 
         eval $NPM_CMD install
@@ -124,23 +124,6 @@ for dir in ./*
         cd $DEPLOYMENT_TARGET
       fi
 done
-
-# 4. Run tests
-# echo "Running tests"
-# eval $NPM_CMD  install -g mocha
-# cd $DEPLOYMENT_TARGET
-# for dir in ./*
-#  do     
-#    cd $dir
-#    if [ -e "./package.json" ]
-#      echo "Running tests in " $dir
-#      then 
-#        eval $NPM_CMD test
-#        exitWithMessageOnError "npm test failed"
-#        cd $DEPLOYMENT_TARGET
-#      fi
-# done
-
 
 
 ##################################################################################################################################
