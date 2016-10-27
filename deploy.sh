@@ -46,6 +46,7 @@ fi
 DEPLOYMENT_SOURCE_USER_GRAPH=$DEPLOYMENT_SOURCE\\jobs\\continuous\\build_user_graph
 DEPLOYMENT_SOURCE_TWITTER_INGEST=$DEPLOYMENT_SOURCE\\jobs\\continuous\\twitter_ingest
 DEPLOYMENT_SOURCE_INFER_LOCATION=$DEPLOYMENT_SOURCE\\jobs\\continuous\\infer_location
+DEPLOYMENT_SOURCE_TEMPLATE=$DEPLOYMENT_SOURCE\\pct-webjobtemplate\lib\azure-storage-tools
 
 
 if [[ ! -n "$DEPLOYMENT_TARGET" ]]; then
@@ -116,7 +117,17 @@ echo Handling custom node.js deployment.
 touch server.js
 
 selectNodeVersion
- 
+
+echo "deploy source is $DEPLOYMENT_SOURCE_TEMPLATE"
+
+if [ -e "$DEPLOYMENT_SOURCE_TEMPLATE\\package.json" ]; then
+  cd $DEPLOYMENT_SOURCE_TEMPLATE
+  echo Installing NPM Packages
+  eval $NPM_CMD install
+  exitWithMessageOnError "npm failed"
+
+  cd - > /dev/null
+fi
 echo "deploy source is $DEPLOYMENT_SOURCE_USER_GRAPH"
 
 if [ -e "$DEPLOYMENT_SOURCE_USER_GRAPH\\package.json" ]; then
