@@ -139,15 +139,15 @@ if [ -e "$DEPLOYMENT_SOURCE_USER_GRAPH\\package.json" ]; then
   cd - > /dev/null
 fi
 
-echo "deploy source is $DEPLOYMENT_SOURCE_TWITTER_INGEST"
-if [ -e "$DEPLOYMENT_SOURCE_TWITTER_INGEST\\package.json" ]; then
-  cd $DEPLOYMENT_SOURCE_TWITTER_INGEST
-  echo Installing NPM Packages
-  eval $NPM_CMD install
-  exitWithMessageOnError "npm failed"
+#echo "deploy source is $DEPLOYMENT_SOURCE_TWITTER_INGEST"
+#if [ -e "$DEPLOYMENT_SOURCE_TWITTER_INGEST\\package.json" ]; then
+#  cd $DEPLOYMENT_SOURCE_TWITTER_INGEST
+#  echo Installing NPM Packages
+#  eval $NPM_CMD install
+#  exitWithMessageOnError "npm failed"
+#  cd - > /dev/null
+#fi
 
-  cd - > /dev/null
-fi
 echo "deploy source is $DEPLOYMENT_SOURCE_INFER_LOCATION"
 if [ -e "$DEPLOYMENT_SOURCE_INFER_LOCATION\\package.json" ]; then
   cd $DEPLOYMENT_SOURCE_INFER_LOCATION
