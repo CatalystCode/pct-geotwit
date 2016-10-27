@@ -116,9 +116,9 @@ cd $DEPLOYMENT_TARGET
 for dir in ./*
   do     
     cd $dir
-    if [ -f "./package.json" ]
-       then 
+    if [ -e "./package.json" ]
         echo $dir
+       then 
         eval $NPM_CMD install
         exitWithMessageOnError "npm install failed"
         cd $DEPLOYMENT_TARGET
