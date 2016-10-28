@@ -10,7 +10,8 @@
   "license": "ISC",
   "files": [
     "run.js",
-    "settings.job"
+    "settings.job",
+    "localConfig.json"
   ],
   "dependencies": {
     "azure-storage": "^1.3.1",
