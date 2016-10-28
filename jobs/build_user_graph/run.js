@@ -208,6 +208,7 @@ function processMessage(config, tableService, queueService, msg, cb) {
   tableService.queryEntities(userTable, tableQuery, null, (err, result) => {
 
     if (err) {
+      console.error("queryEntities");
       console.error(err);
       return;
     }
@@ -311,6 +312,7 @@ function pump(config, tableService, queueService) {
         });
       })
       .catch((e) => {
+        console.error("promise");
         console.error(e.stack);
       });
     }
@@ -343,6 +345,7 @@ function main() {
   nconf.required(['user_table']);
   tableService.createTableIfNotExists(config.get('user_table'), (err, result) => {
     if (err) {
+      console.error("createTable");
       console.error(err);
       process.exit(1);
     }

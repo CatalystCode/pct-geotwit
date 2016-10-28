@@ -23,6 +23,11 @@ function filter(config, cb) {
 
   config.required(['tweet_filter']);
 
+  let filter = config.get('tweet_filter');
+  if (typeof(filter) === 'string') {
+    filter = JSON.parse(filter);
+  }
+
   var client = new twitter({
     consumer_key: config.get('twitter_consumer_key'),
     consumer_secret: config.get('twitter_secret'),
@@ -31,11 +36,11 @@ function filter(config, cb) {
   });
 
   client.stream(
-    '/statuses/filter', config.get('tweet_filter'),
+    '/statuses/filter', filter,
     function(stream) {
       stream.on('error', function(err) {
         console.error('stream error');
-        console.log(err);
+        console.error(err);
         cb('error', null);
       });
       stream.on('data', function(tweets) {
@@ -43,6 +48,7 @@ function filter(config, cb) {
       });
       stream.on('end', (err) => {
         console.error('twitter stream ended');
+        console.error(err);
         cb('end', null);
       });
       stream.on('destroy', (err) => {
@@ -62,6 +68,10 @@ function main() {
 
   let pipeline = [];
   let pipelineSpec = config.get('pipeline');
+  if (typeof(pipelineSpec) == 'string') {
+    pipelineSpec = JSON.parse(pipelineSpec);
+  }
+  
   for (let stage of pipelineSpec) {
     let cls = require('./lib/' + stage);
     pipeline.push(new cls(config));
