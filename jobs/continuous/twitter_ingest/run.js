@@ -62,7 +62,7 @@ function main() {
 
   let pipeline = [];
   let pipelineSpec = config.get('pipeline');
-  for (let stage of pipelineSpec) {
+  for (let stage of pipelineSpec.split(",")) {
     let cls = require('./lib/' + stage);
     pipeline.push(new cls(config));
   }
