@@ -117,13 +117,13 @@ echo Handling custom node.js deployment.
 touch server.js
 
 selectNodeVersion
-$NPM_CMD cache clean 
+eval $NPM_CMD cache clean 
 echo "deploy source is $DEPLOYMENT_SOURCE_TEMPLATE"
 
 if [ -e "$DEPLOYMENT_SOURCE_TEMPLATE\\package.json" ]; then
   cd $DEPLOYMENT_SOURCE_TEMPLATE
   echo Installing NPM Packages
-  $NPM_CMD cache clean 
+  eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
 
@@ -134,7 +134,7 @@ echo "deploy source is $DEPLOYMENT_SOURCE_USER_GRAPH"
 if [ -e "$DEPLOYMENT_SOURCE_USER_GRAPH\\package.json" ]; then
   cd $DEPLOYMENT_SOURCE_USER_GRAPH
   echo Installing NPM Packages
-  $NPM_CMD cache clean 
+  eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
 
@@ -145,7 +145,7 @@ echo "deploy source is $DEPLOYMENT_SOURCE_TWITTER_INGEST"
 if [ -e "$DEPLOYMENT_SOURCE_TWITTER_INGEST\\package.json" ]; then
   cd $DEPLOYMENT_SOURCE_TWITTER_INGEST
   echo Installing NPM Packages
-  $NPM_CMD cache clean 
+  eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
   cd - > /dev/null
@@ -155,7 +155,7 @@ echo "deploy source is $DEPLOYMENT_SOURCE_INFER_LOCATION"
 if [ -e "$DEPLOYMENT_SOURCE_INFER_LOCATION\\package.json" ]; then
   cd $DEPLOYMENT_SOURCE_INFER_LOCATION
   echo Installing NPM Packages
-  $NPM_CMD cache clean 
+  eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
 
