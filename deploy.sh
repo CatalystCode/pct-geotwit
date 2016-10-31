@@ -45,7 +45,8 @@ fi
 
 DEPLOYMENT_SOURCE_USER_GRAPH=$DEPLOYMENT_SOURCE\\jobs\\continuous\\build_user_graph
 DEPLOYMENT_SOURCE_TWITTER_INGEST=$DEPLOYMENT_SOURCE\\jobs\\continuous\\twitter_ingest
-DEPLOYMENT_SOURCE_INFER_LOCATION=$DEPLOYMENT_SOURCE\\jobs\\continuous\\infer_location
+DEPLOYMENT_SOURCE_INFER_LOCATION=$DEPLOYMENT_SOURCE\\jobs\\triggered\\infer_location
+DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER=$DEPLOYMENT_SOURCE\\jobs\\triggered\\inference_controller
 DEPLOYMENT_SOURCE_TEMPLATE=$DEPLOYMENT_SOURCE\\pct-webjobtemplate\\lib\\azure-storage-tools
 
 
@@ -154,6 +155,14 @@ fi
 echo "deploy source is $DEPLOYMENT_SOURCE_INFER_LOCATION"
 if [ -e "$DEPLOYMENT_SOURCE_INFER_LOCATION\\package.json" ]; then
   cd $DEPLOYMENT_SOURCE_INFER_LOCATION
+  echo Installing NPM Packages
+  eval $NPM_CMD cache clean 
+  eval $NPM_CMD install
+  exitWithMessageOnError "npm failed"
+
+echo "deploy source is $DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER"
+if [ -e "$DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER\\package.json" ]; then
+  cd $DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER
   echo Installing NPM Packages
   eval $NPM_CMD cache clean 
   eval $NPM_CMD install
