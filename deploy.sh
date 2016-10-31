@@ -127,7 +127,6 @@ if [ -e "$DEPLOYMENT_SOURCE_TEMPLATE\\package.json" ]; then
   eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
-
   cd - > /dev/null
 fi
 echo "deploy source is $DEPLOYMENT_SOURCE_USER_GRAPH"
@@ -138,7 +137,6 @@ if [ -e "$DEPLOYMENT_SOURCE_USER_GRAPH\\package.json" ]; then
   eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
-
   cd - > /dev/null
 fi
 
@@ -159,6 +157,8 @@ if [ -e "$DEPLOYMENT_SOURCE_INFER_LOCATION\\package.json" ]; then
   eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
+  cd - > /dev/null
+fi
 
 echo "deploy source is $DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER"
 if [ -e "$DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER\\package.json" ]; then
@@ -167,7 +167,6 @@ if [ -e "$DEPLOYMENT_SOURCE_INFERENCE_CONTROLLER\\package.json" ]; then
   eval $NPM_CMD cache clean 
   eval $NPM_CMD install
   exitWithMessageOnError "npm failed"
-
   cd - > /dev/null
 fi
 
