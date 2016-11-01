@@ -1,7 +1,20 @@
+'use strict';
+
 let nconf = require("nconf");
 let azure = require("azure-storage");
 
-let debug = true;
+let _debug = true;
+
+function debug(msg) {
+  if (_debug && msg) {
+    if (msg.stack !== undefined) {
+      console.log(msg.stack);
+    }
+    else {
+      console.log(msg);
+    }
+  }
+}
 
 function tablify(o) {
 
@@ -11,7 +24,7 @@ function tablify(o) {
 
   var row = {};
   for (var k in o) {
-    if (typeof(o[k]) == 'object') {
+    if (typeof(o[k]) === 'object') {
       add(row, k, JSON.stringify(o[k]));
     }
     else {
@@ -26,8 +39,9 @@ function tablify(o) {
 function insertIteration(config, tableService, queueService, iteration, cb) {
 
   let jobs = [];
-  let minPartition = 10;
-  let maxPartition = 100;
+  config.reque
+  let minPartition = config.get("startPartition");
+  let maxPartition = config.get("endPartition");
 
   if (config.get('test')) {
     maxPartition = minPartition;
@@ -56,7 +70,7 @@ function insertIteration(config, tableService, queueService, iteration, cb) {
       };
 
       tableService.insertOrReplaceEntity(
-        config.get('command_table'), tablify(row), (err, result, response) => {
+        config.get('command_table'), tablify(row), (err, result) => {
           if (err) {
             reject(err);
           }
@@ -66,7 +80,7 @@ function insertIteration(config, tableService, queueService, iteration, cb) {
         }
       );
     });
-    all.push();
+    all.push(p);
   }
 
   Promise.all(all)
@@ -83,7 +97,7 @@ function insertIteration(config, tableService, queueService, iteration, cb) {
           }
         });
       });
-      all.push();
+      all.push(p);
     }
     
     Promise.all(all)
@@ -103,23 +117,28 @@ function awaitIterationCompletion(config, tableService, queueService, iterations
 
   let query = new azure.TableQuery().where("PartitionKey eq 'status'");
 
-  tableService.queryEntities(config.get('command_table'), query, null, (err, result, response) => {
+  tableService.queryEntities(config.get('command_table'), query, null, (err, result) => {
+
     if (err) {
-      console.error(err);  
+      console.error(err.stack);  
     }
 
     for (let row of result.entries) {
-      console.log(row);
-      if (row.status._ != 'processed') {
+      if (row.status._ !== 'processed') {
         setTimeout(() => {
           awaitIterationCompletion(config, tableService, queueService, iterations, generation);
-        }, debug ? 5000 : 60 * 1000);
+        }, _debug ? 5000 : 60 * 1000);
         return;
       }
     }
 
     iterations.shift();
-    insertNextIteration(config, tableService, queueService, iterations, generation);
+    if (iterations.length > 0) {
+      insertNextIteration(config, tableService, queueService, iterations, generation);
+    }
+    else {
+      console.log("All done, exiting");
+    }
   });  
 }
 
@@ -129,9 +148,56 @@ function insertNextIteration(config, tableService, queueService, iterations, gen
   });
 }
 
+function init(config, tableService, queueService, cb) {
+
+  let query = new azure.TableQuery().where('PartitionKey eq \'status\'');
+
+  tableService.queryEntities(config.get('command_table'), query, null, (err, result) => {
+
+    if (err) {
+      console.error(err.stack);
+    }
+
+    let all = [];
+
+    for (let entry of result.entries) {
+      let entity = {
+        PartitionKey : { _ : 'status'},
+        RowKey : { _ : entry.RowKey._ }
+      };
+
+      all.push(new Promise((resolve, reject) => {      
+        tableService.deleteEntity(config.get('command_table'), entity, (err) => {
+          if (err) {
+            console.error(err.stack);
+            resolve(false);
+          }
+          else {
+            resolve(true);
+          }
+        });
+      }));
+    }
+
+    Promise.all(all)
+    .then((results) => {
+      queueService.clearMessages(config.get('command_queue'), (err) => {
+        if (err) {
+          console.error(err.stack);
+        }
+        cb();
+      });
+    });
+  });
+}
+
 function main() {
 
-  nconf.env().argv().defaults({config:'localConfig.json'});
+  nconf.env().argv().defaults({
+    config : 'localConfig.json',
+    startPartition : 10,
+    endPartition : 99
+  });
 
   let configFile = nconf.get('config');
   let config = nconf.file({file:configFile, search:true});
@@ -141,39 +207,41 @@ function main() {
     config.get("table_storage_account"),
     config.get("table_storage_key")
   );
-  queueService.messageEncoder = null
+  queueService.messageEncoder = null;
 
   let tableService = azure.createTableService(
     config.get("table_storage_account"),
     config.get("table_storage_key")
   );
 
-  tableService.createTableIfNotExists(config.get('command_table'), (err, result) => {
+  tableService.createTableIfNotExists(config.get('command_table'), (err) => {
 
-    if (err) {
-      console.warn('create command table');
-      console.warn(err.stack);
-    }
+    debug(err);
 
-    queueService.createQueueIfNotExists(config.get('command_queue'), (err, result) => {
+    queueService.createQueueIfNotExists(config.get('command_queue'), (err) => {
 
       if (err) {
         console.warn('create command queue');
         console.warn(err.stack);
       }
 
-      let iterations = [];
-      if (config.get('test')) {
-        iterations = [1, 2];
-      }
-      else {
-        for (let i = 1; i <= 5; i++) {
-          iterations.push(i);
-        }
-      }
+      init(config, tableService, queueService, (err) => {
 
-      let generation = "randomnumber";
-      insertNextIteration(config, tableService, queueService, iterations, generation);
+        debug(err);
+
+        let iterations = [];
+        if (config.get('test')) {
+          iterations = [1, 2];
+        }
+        else {
+          for (let i = 1; i <= 5; i++) {
+            iterations.push(i);
+          }
+        }
+
+        let generation = "randomnumber";
+        insertNextIteration(config, tableService, queueService, iterations, generation);
+      });
     });
   });
 }

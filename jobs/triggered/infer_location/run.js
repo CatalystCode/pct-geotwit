@@ -167,6 +167,8 @@ function processUser(config, tableService, user, iteration, stats) {
     stats.users++;
     let locations = JSON.parse(user.locations);
     if (locations.length > 0) {
+      // User already has an absolute (reported) location, never change these
+      stats.absoluteLocations++;
       resolve(true);
     }
     else {
@@ -219,6 +221,7 @@ function processUser(config, tableService, user, iteration, stats) {
           }
           else {
             retryOrResolve(resolve, (cb) => {
+              stats.finalLocations++;
               writeFinalLocation(config, tableService, user, centrePoint, 0.5, cb);
             });
           }
@@ -249,7 +252,8 @@ function processPartition(config, tableService, partition, iteration, cb) {
   let stats = {
     users : 0,
     absoluteLocations : 0,
-    inferredLocations : 0
+    inferredLocations : 0,
+    finalLocations : 0
   };
 
   let query = new azure.TableQuery().where('PartitionKey == ?', partition.toString());
@@ -277,7 +281,7 @@ function processPartition(config, tableService, partition, iteration, cb) {
       }
 
       processBatch(tableService, result.entries)
-      .then((result) => {
+      .then(() => {
         if (result.continuationToken) {
           // If there are more entries, go round again
           process.nextTick(() => {
@@ -314,7 +318,7 @@ function updateStatus(config, tableService, partition, iteration, status, cb) {
   });
 }
 
-function pumpCommandQueue(config, tableService, queueService) {
+function pumpCommandQueue(config, tableService, queueService, retry) {
 
   let commandQueue = config.get('command_queue');
 
@@ -328,26 +332,36 @@ function pumpCommandQueue(config, tableService, queueService) {
 
       let msg = result[0];
       var message = JSON.parse(msg.messageText);
+      debug('partition: ' + message.partition + ' iteration: ' + message.iteration);
       processPartition(config, tableService, message.partition, message.iteration, (stats) => {
 
         timerEnd('processPartition');
-        debug('partition: ' + message.partition + ' iteration: ' + message.iteration);
         debug(JSON.stringify(stats));
 
+        debug("update");
         updateStatus(
           config, tableService, message.partition, message.iteration, 'processed', (err) => {
           debug(err);
           queueService.deleteMessage(commandQueue, msg.messageId, msg.popReceipt, (err) => {
             debug(err);
             process.nextTick(() => {
-              pumpCommandQueue(config, tableService, queueService);
+              pumpCommandQueue(config, tableService, queueService, 3);
             });
           });
         });
       });
     }
     else {
-      console.log('Nothing in the command queue, exiting');
+      if (retry > 0) {
+        let timeout = _debug ? 3000 : 30000;
+        console.log('Nothing in the command queue, sleeping');
+        setTimeout(() => {
+          pumpCommandQueue(config, tableService, queueService, --retry);
+        }, timeout);
+      }
+      else {
+        console.log('Nothing in the command queue, exiting');
+      }
     }
   });
 }
@@ -375,7 +389,7 @@ function main() {
     config.get('table_storage_key')
   );
 
-  pumpCommandQueue(config, tableService, queueService);
+  pumpCommandQueue(config, tableService, queueService, 3);
 }
 
 if (require.main === module) {
