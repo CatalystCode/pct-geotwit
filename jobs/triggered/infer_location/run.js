@@ -331,10 +331,9 @@ function pumpCommandQueue(config, tableService, queueService, retry) {
 
       timerStart('processPartition');
 
-
       let msg = result[0];
       var message = JSON.parse(msg.messageText);
-      debug('partition: ' + message.partition + ' iteration: ' + message.iteration);
+      debug('\npartition: ' + message.partition + ' iteration: ' + message.iteration);
       processPartition(config, tableService, message.partition, message.iteration, (stats) => {
 
         timerEnd('processPartition');
