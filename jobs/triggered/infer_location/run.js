@@ -4,11 +4,8 @@ let nconf = require('nconf');
 let geolib = require('geolib');
 let azure = require('azure-storage');
 
-let http = require('http');
 let https = require('https');
-
-//http.globalAgent.maxSockets = 16;
-//https.globalAgent.maxSockets = 16;
+https.globalAgent = new https.Agent({keepAlive:true, maxSockets:64, maxFreeSockets:64});
 
 let _debug = true;
 
@@ -318,7 +315,7 @@ function updateStatus(config, tableService, partition, iteration, status, cb) {
     if (err) {
       debug(err);
     }
-    cb(result);
+    cb(null, result);
   });
 }
 
@@ -334,6 +331,7 @@ function pumpCommandQueue(config, tableService, queueService, retry) {
 
       timerStart('processPartition');
 
+
       let msg = result[0];
       var message = JSON.parse(msg.messageText);
       debug('partition: ' + message.partition + ' iteration: ' + message.iteration);
@@ -342,7 +340,6 @@ function pumpCommandQueue(config, tableService, queueService, retry) {
         timerEnd('processPartition');
         debug(JSON.stringify(stats));
 
-        debug("update");
         updateStatus(
           config, tableService, message.partition, message.iteration, 'processed', (err) => {
           debug(err);
@@ -392,13 +389,6 @@ function main() {
     config.get('table_storage_account'),
     config.get('table_storage_key')
   );
-
-  setInterval(() => {
-    console.log(http.globalAgent.maxSockets);
-    console.log(https.globalAgent.maxSockets);
-    console.log(Object.keys(http.globalAgent.sockets).length);
-    console.log(Object.keys(https.globalAgent.sockets).length);
-  }, 3000);
 
   pumpCommandQueue(config, tableService, queueService, 3);
 }

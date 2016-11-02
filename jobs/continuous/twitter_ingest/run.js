@@ -4,8 +4,8 @@ var fs = require('fs');
 var nconf = require('nconf');
 var twitter = require('twitter');
 
-require('http').globalAgent.maxSockets = 128;
-require('https').globalAgent.maxSockets = 128;
+let https = require('https');
+https.globalAgent = new https.Agent({keepAlive:true, maxSockets:8, maxFreeSockets:8});
 
 function processTweet(tweet, pipeline) {
 
