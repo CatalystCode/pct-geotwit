@@ -3,6 +3,8 @@
 let nconf = require("nconf");
 let azure = require("azure-storage");
 
+require('https').globalAgent.maxSockets = 16;
+
 let _debug = true;
 
 function debug(msg) {
