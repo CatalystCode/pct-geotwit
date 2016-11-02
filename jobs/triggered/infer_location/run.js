@@ -323,7 +323,8 @@ function pumpCommandQueue(config, tableService, queueService, retry) {
 
   let commandQueue = config.get('command_queue');
 
-  queueService.getMessages(commandQueue, (err, result) => {
+  let options = { visibilityTimeout : 60 };
+  queueService.getMessages(commandQueue, options, (err, result) => {
 
     debug(err);
 
@@ -341,14 +342,15 @@ function pumpCommandQueue(config, tableService, queueService, retry) {
 
         updateStatus(
           config, tableService, message.partition, message.iteration, 'processed', (err) => {
-          debug(err);
-          queueService.deleteMessage(commandQueue, msg.messageId, msg.popReceipt, (err) => {
             debug(err);
-            process.nextTick(() => {
-              pumpCommandQueue(config, tableService, queueService, 3);
+            queueService.deleteMessage(commandQueue, msg.messageId, msg.popReceipt, (err) => {
+              debug(err);
+              process.nextTick(() => {
+                pumpCommandQueue(config, tableService, queueService, 3);
+              });
             });
-          });
-        });
+          }
+        );
       });
     }
     else {
