@@ -4,8 +4,11 @@ let nconf = require('nconf');
 let geolib = require('geolib');
 let azure = require('azure-storage');
 
-require('http').globalAgent.maxSockets = 128;
-require('https').globalAgent.maxSockets = 128;
+let http = require('http');
+let https = require('https');
+
+//http.globalAgent.maxSockets = 16;
+//https.globalAgent.maxSockets = 16;
 
 let _debug = true;
 
@@ -389,6 +392,13 @@ function main() {
     config.get('table_storage_account'),
     config.get('table_storage_key')
   );
+
+  setInterval(() => {
+    console.log(http.globalAgent.maxSockets);
+    console.log(https.globalAgent.maxSockets);
+    console.log(Object.keys(http.globalAgent.sockets).length);
+    console.log(Object.keys(https.globalAgent.sockets).length);
+  }, 3000);
 
   pumpCommandQueue(config, tableService, queueService, 3);
 }
