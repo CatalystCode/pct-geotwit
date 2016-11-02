@@ -4,7 +4,8 @@ let nconf = require("nconf");
 let geolib = require("geolib");
 let azure = require("azure-storage");
 
-require('https').globalAgent.maxSockets = 256;
+require('http').globalAgent.maxSockets = 128;
+require('https').globalAgent.maxSockets = 128;
 
 function random(low, high) {
   return Math.random() * (high - low) + low;

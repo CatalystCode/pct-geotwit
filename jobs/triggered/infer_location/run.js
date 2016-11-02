@@ -4,6 +4,7 @@ let nconf = require('nconf');
 let geolib = require('geolib');
 let azure = require('azure-storage');
 
+require('http').globalAgent.maxSockets = 128;
 require('https').globalAgent.maxSockets = 128;
 
 let _debug = true;
