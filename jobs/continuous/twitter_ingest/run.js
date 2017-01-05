@@ -4,6 +4,9 @@ var fs = require('fs');
 var nconf = require('nconf');
 var twitter = require('twitter');
 
+let https = require('https');
+https.globalAgent = new https.Agent({keepAlive:true, maxSockets:8, maxFreeSockets:8});
+
 function processTweet(tweet, pipeline) {
 
   if (tweet.limit) {
@@ -23,6 +26,11 @@ function filter(config, cb) {
 
   config.required(['tweet_filter']);
 
+  let filter = config.get('tweet_filter');
+  if (typeof(filter) === 'string') {
+    filter = JSON.parse(filter);
+  }
+
   var client = new twitter({
     consumer_key: config.get('twitter_consumer_key'),
     consumer_secret: config.get('twitter_secret'),
@@ -31,11 +39,11 @@ function filter(config, cb) {
   });
 
   client.stream(
-    '/statuses/filter', config.get('tweet_filter'),
+    '/statuses/filter', filter,
     function(stream) {
       stream.on('error', function(err) {
         console.error('stream error');
-        console.log(err);
+        console.error(err);
         cb('error', null);
       });
       stream.on('data', function(tweets) {
@@ -43,6 +51,7 @@ function filter(config, cb) {
       });
       stream.on('end', (err) => {
         console.error('twitter stream ended');
+        console.error(err);
         cb('end', null);
       });
       stream.on('destroy', (err) => {
@@ -62,7 +71,8 @@ function main() {
 
   let pipeline = [];
   let pipelineSpec = config.get('pipeline');
-  for (let stage of pipelineSpec) {
+  for (let stage of pipelineSpec.split(",")) {
+    console.log('adding stage:' + stage);
     let cls = require('./lib/' + stage);
     pipeline.push(new cls(config));
   }
@@ -81,7 +91,7 @@ function main() {
       console.warn('Error from streaming api...');
       if (err === 'end') {
         console.log('Retrying...');
-        setInterval(() => {
+        setTimeout(() => {
           filter(config, filterCallback); 
         }, 5000);
       }

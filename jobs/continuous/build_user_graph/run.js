@@ -4,6 +4,9 @@ let nconf = require("nconf");
 let geolib = require("geolib");
 let azure = require("azure-storage");
 
+let https = require('https');
+https.globalAgent = new https.Agent({keepAlive:true, maxSockets:64, maxFreeSockets:64});
+
 function random(low, high) {
   return Math.random() * (high - low) + low;
 }
@@ -208,6 +211,7 @@ function processMessage(config, tableService, queueService, msg, cb) {
   tableService.queryEntities(userTable, tableQuery, null, (err, result) => {
 
     if (err) {
+      console.error("queryEntities");
       console.error(err);
       return;
     }
@@ -311,6 +315,7 @@ function pump(config, tableService, queueService) {
         });
       })
       .catch((e) => {
+        console.error("promise");
         console.error(e.stack);
       });
     }
@@ -323,8 +328,9 @@ function pump(config, tableService, queueService) {
 
 function main() {
 
-  let configFile = nconf.argv().get('config');
-  nconf.defaults({config:'localConfig.json'});
+  nconf.env().argv().defaults({config:'localConfig.json'});
+
+  let configFile = nconf.get('config');
   let config = nconf.file({file:configFile, search:true});
 
   nconf.required(['table_storage_account', 'table_storage_key']);
@@ -342,9 +348,11 @@ function main() {
   nconf.required(['user_table']);
   tableService.createTableIfNotExists(config.get('user_table'), (err, result) => {
     if (err) {
+      console.error("createTable");
       console.error(err);
       process.exit(1);
     }
+    console.log("Starting...");
     pump(config, tableService, queueService);
   });
 }

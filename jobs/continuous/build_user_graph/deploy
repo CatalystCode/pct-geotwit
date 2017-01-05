@@ -1,0 +1,3 @@
+#!/bin/sh
+TOOLS_DIR=../../tools
+node $TOOLS_DIR/deploy_web_job/run.js . --job-type=continuous --job-name=graph_builder --site-name=pct-geotwit-ar
