@@ -7,10 +7,14 @@
     "geoTwitSkuCapacity": { "type": "int", "defaultValue": 1, "minValue": 1 },
     "webSiteName": { "type": "string" },
     "uniqueId": { "type": "string" },
-    "languageFilter": { "type": "string" },
+    "geoTwitLanguageFilter": { "type": "string" },
     "geoTwitStorageAccountName": { "type": "string" },
     "geoTwitFilterKeywords": { "type": "string" },
-    "boundingBox": { "type": "string" }
+    "geoTwitBoundingBox": { "type": "string" },
+    "geoTwitConsumerKey": {"type": "string" },
+    "geoTwitConsumerSecret": {"type": "string" },
+    "geoTwitAccessTokenKey": {"type": "string" },
+    "geoTwitAccessTokenSecret": {"type": "string" }
     },
   "variables": {
     "applicationInsightName": "[concat('FortisServicesAppInsight-', parameters('uniqueId'))]"
@@ -104,17 +108,17 @@
             "table_storage_account": "[parameters('geoTwitStorageAccountName')]",
             "STORAGE_CONNECTION_STRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('geoTwitStorageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('geoTwitStorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
             "table_storage_key": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('geoTwitStorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
-            "twitter_consumer_key": "78Pi97eDTovWRQ3Xfg9OOO9VI",
-            "twitter_secret": "TUQPpkuHrN9b7hHVSw89TDTtV4GZ1uL2FoZ8HUpEegzBC5HLhA",
-            "twitter_access_token": "3428943724-U1TSMowu9QEc9bn6GuqOqyHRuAw7kL0jXsdvFl6",
-            "twitter_access_token_secret": "42XbxVMX6zS9LfzEXUwXSvNGujdSXajx8zrywJf2d44nK",
+            "twitter_consumer_key": "[parameters('geoTwitConsumerKey')]",
+            "twitter_secret": "[parameters('geoTwitConsumerSecret')]",
+            "twitter_access_token": "[parameters('geoTwitAccessTokenKey')]",
+            "twitter_access_token_secret": "[parameters('geoTwitAccessTokenSecret')]",
             "pipeline": "dedupe,enqueueUserGraph",
             "tweet_table": "tweets",
             "user_table": "users",
             "command_table": "command",
             "command_queue": "command",
             "usergraph_queue": "ingestusergraph",
-            "tweet_filter": "[concat('{\"lang\": \"', parameters('languageFilter'), '\", \"track\" : \"' , parameters('geoTwitFilterKeywords'), '\", \"locations\" : \"', parameters('boundingBox'),'\"}')]"
+            "tweet_filter": "[concat('{\"lang\": \"', parameters('GeoTwitLanguageFilter'), '\", \"track\" : \"' , parameters('geoTwitFilterKeywords'), '\", \"locations\" : \"', parameters('geoTwitBoundingBox'),'\"}')]"
           }
         }
       ]
